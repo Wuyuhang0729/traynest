@@ -6,12 +6,13 @@ internal sealed class TrayBridge:IDisposable
 {
     internal readonly Dictionary<string,IconRecord> Icons=new();
     internal event Action? Changed;
-    internal event Action<string>? Faulted;
+    internal event Action<string,Exception?>? Faulted;
     internal Func<IconRecord,Rectangle>? Bounds;
     internal HashSet<int>? AllowedOwners;
     internal readonly Dictionary<string,int> PacketLayouts=new();
     private readonly Dictionary<string,byte[]> testPackets=new();
     internal int HiddenStateReapplications;
+    internal int UnrecognizedPacketCount;
     private readonly Settings settings;
     private readonly RecoveryJournal recovery;
     private readonly Native.Procedure procedure;
@@ -39,7 +40,7 @@ internal sealed class TrayBridge:IDisposable
     internal void Maintain()
     {
         if(disposing||receiver==0)return;
-        if(!ExplorerAlive){Fail("资源管理器已重启。请重新打开嵌套面板以恢复收纳。");return;}
+        if(!ExplorerAlive){Fail("TN2003");return;}
         if(Native.FindWindowW("Shell_TrayWnd",null)!=receiver)
             Native.SetWindowPos(receiver,new nint(-1),0,0,0,0,0x213);
         long now=Environment.TickCount64;
@@ -49,14 +50,14 @@ internal sealed class TrayBridge:IDisposable
             Native.GetWindowThreadProcessId(record.Window,out uint owner);
             if(!Native.IsWindow(record.Window)||owner!=record.ProcessId)continue;
             try {SetState(record,1);HiddenStateReapplications++;}
-            catch(InvalidOperationException){Fail("系统未能保持图标隐藏，已停止收纳并尝试恢复。");return;}
+            catch(InvalidOperationException error){Fail("TN2002",error);return;}
         }
     }
-    private void Fail(string text) {if(!faulted){faulted=true;Faulted?.Invoke(text);}}
+    private void Fail(string code,Exception? error=null) {if(!faulted){faulted=true;Faulted?.Invoke(code,error);}}
     private nint Forward(uint message,nuint wp,nint lp)
     {
         if(Native.SendMessageTimeoutW(explorer,message,wp,lp,0x22,750,out nuint result)==0)
-        {if(!disposing)Fail("系统托盘暂时无响应，已停止收纳并尝试恢复图标。");return 0;}
+        {if(!disposing)Fail("TN2001");return 0;}
         return unchecked((nint)result);
     }
     private nint ForwardBytes(nuint tag,byte[] bytes,nuint wp)
@@ -76,6 +77,7 @@ internal sealed class TrayBridge:IDisposable
                 {
                     string shape=$"tag=1,length={copy.Size},inner={(copy.Size>=12&&copy.Bytes!=0?Marshal.ReadInt32(copy.Bytes,8):0)}";
                     if(PacketLayouts.ContainsKey(shape)||PacketLayouts.Count<12)PacketLayouts[shape]=PacketLayouts.GetValueOrDefault(shape)+1;
+                    if(copy.Size!=1484){UnrecognizedPacketCount++;AppDiagnostics.Warn("TN1101",shape);}
                 }
                 if(copy.Tag==3&&copy.Size==40&&copy.Bytes!=0)
                 {
@@ -95,6 +97,7 @@ internal sealed class TrayBridge:IDisposable
                 {
                     byte[] bytes=new byte[copy.Size];Marshal.Copy(copy.Bytes,bytes,0,bytes.Length);
                     var packet=TrayPacket.Parse((ulong)copy.Tag,bytes);
+                    if(packet==null){UnrecognizedPacketCount++;AppDiagnostics.Warn("TN1101","unrecognized-layout");}
                     if(packet!=null)
                     {
                         Native.GetWindowThreadProcessId(packet.Window,out uint process);
@@ -148,7 +151,7 @@ internal sealed class TrayBridge:IDisposable
         }
         catch(Exception error)
         {
-            Fail("收纳已停止："+error.Message);
+            Fail("TN2004",error);
             return message==0x4A?Forward(message,wp,lp):Native.DefWindowProcW(hwnd,message,wp,lp);
         }
     }
@@ -161,9 +164,22 @@ internal sealed class TrayBridge:IDisposable
     }
     internal void Collect(IconRecord record)
     {
-        if(!record.CanCollect)throw new InvalidOperationException("尚未取得此图标的交互信息，请刷新图标或重启对应应用后再拖入。");
-        if(!settings.Collected.Contains(record.Rule)){settings.Collected.Add(record.Rule);settings.Save();}
-        record.Selected=true;record.RehideAfter=Environment.TickCount64+450;SaveRecovery();SetState(record,1);Changed?.Invoke();
+        if(!record.CanCollect)throw new TrayNestException("TN2101");
+        bool added=!settings.Collected.Contains(record.Rule),attempted=false;
+        if(added)settings.Collected.Add(record.Rule);
+        try
+        {
+            record.Selected=true;record.RehideAfter=Environment.TickCount64+450;SaveRecovery();
+            attempted=true;SetState(record,1);settings.Save();Changed?.Invoke();
+        }
+        catch
+        {
+            if(added)settings.Collected.Remove(record.Rule);
+            record.Selected=false;
+            try{if(attempted)SetState(record,record.OriginalState);SaveRecovery();}
+            catch(Exception undo){record.Selected=true;AppDiagnostics.Error("TN6001",undo);Fail("TN6001",undo);}
+            Changed?.Invoke();throw;
+        }
     }
     internal void ResetVisibleForOwnTest(IconRecord record)
     {
@@ -176,12 +192,22 @@ internal sealed class TrayBridge:IDisposable
     }
     internal void Restore(IconRecord record,bool forget=true)
     {
-        if(forget)
+        var previousRules=settings.Collected.ToList();bool previousSelected=record.Selected;
+        try
         {
-            settings.Collected.Remove(record.Rule);settings.Save();
-            foreach(var sibling in Icons.Values.Where(value=>value.Selected&&value.Rule==record.Rule&&value!=record).ToArray())Restore(sibling,false);
+            if(forget)settings.Collected.Remove(record.Rule);
+            record.Selected=false;SetState(record,record.OriginalState);
+            if(forget)settings.Save();SaveRecovery();
         }
-        record.Selected=false;SetState(record,record.OriginalState);SaveRecovery();Changed?.Invoke();
+        catch
+        {
+            settings.Collected=previousRules;record.Selected=previousSelected;
+            try{SetState(record,previousSelected?1:record.OriginalState);SaveRecovery();}
+            catch(Exception undo){AppDiagnostics.Error("TN6001",undo);Fail("TN6001",undo);}
+            Changed?.Invoke();throw;
+        }
+        if(forget)foreach(var sibling in Icons.Values.Where(value=>value.Selected&&value.Rule==record.Rule&&value!=record).ToArray())Restore(sibling,false);
+        Changed?.Invoke();
     }
     private void SetState(IconRecord record,uint state)
     {
@@ -192,18 +218,18 @@ internal sealed class TrayBridge:IDisposable
     }
     internal void ForwardInput(IconRecord record,uint code,Rectangle rect)
     {
-        if(!Native.IsWindow(record.Window)||record.Callback==0)return;
+        if(!Native.IsWindow(record.Window)||record.Callback==0)throw new TrayNestException("TN3001");
         int x=rect.Left+rect.Width/2,y=rect.Top+rect.Height/2;
         if(record.Version>=4)
         {
             uint anchor=unchecked((uint)(((y&0xFFFF)<<16)|(x&0xFFFF)));
             uint[] events=code==0x400?[0x201u,0x202u,0x400u]:code==0x203?[0x203u,0x202u]:[code];
-            foreach(uint value in events)NativeTray.PostMessage(record.Window,record.Callback,anchor,(nint)((record.Id<<16)|value));
+            foreach(uint value in events)if(!NativeTray.PostMessage(record.Window,record.Callback,anchor,(nint)((record.Id<<16)|value)))throw new TrayNestException("TN3001",new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error()));
         }
         else
         {
             uint[] events=code==0x7B?[0x204u,0x205u]:code==0x400?[0x201u,0x202u]:[0x203u,0x202u];
-            foreach(uint value in events)NativeTray.PostMessage(record.Window,record.Callback,record.Id,(nint)value);
+            foreach(uint value in events)if(!NativeTray.PostMessage(record.Window,record.Callback,record.Id,(nint)value))throw new TrayNestException("TN3001",new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error()));
         }
     }
     internal void RefreshExisting()
@@ -224,7 +250,7 @@ internal sealed class TrayBridge:IDisposable
             if(receiver!=0){Native.DestroyWindow(receiver);receiver=0;}
             Native.UnregisterClassW("Shell_TrayWnd",module);
             foreach(var record in Icons.Values.Where(value=>value.Selected).ToArray())
-                try {record.Selected=false;SetState(record,record.OriginalState);}catch{RestoredAll=false; /* Watchdog keeps the journal. */ }
+                try {record.Selected=false;SetState(record,record.OriginalState);}catch(Exception error){RestoredAll=false;AppDiagnostics.Error("TN6001",error); /* Watchdog keeps the journal. */ }
         }
         finally {foreach(var record in Icons.Values)record.Dispose();Icons.Clear();GC.KeepAlive(procedure);}
     }

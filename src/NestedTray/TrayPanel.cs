@@ -64,11 +64,14 @@ internal sealed class TrayPanel:Form
     internal DismissOptions DismissSettings=new();
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     internal bool IsDismissing{get;private set;}
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal bool IsOpening{get;private set;}
     internal Action? DismissStarted;
     private readonly System.Windows.Forms.Timer dismissFrames=new(){Interval=15};
     private readonly System.Diagnostics.Stopwatch dismissClock=new();
     private Point dismissHome;
     private DismissOptions? activeDismiss;
+    private double animationStartOffset,animationEndOffset,animationStartOpacity=1;
     protected override bool ShowWithoutActivation=>true;
     protected override CreateParams CreateParams
     {get {var value=base.CreateParams;value.ExStyle|=0x08000000;return value;}}
@@ -193,6 +196,8 @@ internal sealed class TrayPanel:Form
     }
     internal void Open(bool preview=false)
     {
+        bool animate=!Visible||IsDismissing;
+        Point? interrupted=IsDismissing?Location:null;
         CancelDismiss();
         DragPreview=preview;
         nint overflow=Native.FindWindowW("TopLevelWindowForOverflowXamlIsland",null);
@@ -200,7 +205,17 @@ internal sealed class TrayPanel:Form
         var layout=NativeTrayLayout.Measure(overflow,dpi,!preview);
         IconPixels=layout.Icon;CellPixels=layout.Cell;surfacePadding=layout.Padding;ApplyContentLayout();
         foreach(var tile in tiles.Values){tile.Size=new Size(CellPixels,CellPixels);if(tile.Tag is IconRecord record){var previous=tile.Image;tile.Image=record.Image==null?null:new Bitmap(record.Image,new Size(IconPixels,IconPixels));previous?.Dispose();}}
-        PositionPanel();Show();EnsureAboveApplications();
+        PositionPanel();
+        var options=DismissSettings.Copy();options.Validate();
+        if(animate&&options.Enabled&&options.DurationMs>0&&SystemAnimation.Enabled)
+        {
+            dismissHome=Location;activeDismiss=options;IsOpening=true;
+            animationStartOffset=interrupted.HasValue&&interrupted.Value.X==dismissHome.X?Math.Clamp(interrupted.Value.Y-dismissHome.Y,0,options.DistanceDip*DeviceDpi/96.0):options.DistanceDip*DeviceDpi/96.0;
+            animationEndOffset=0;animationStartOpacity=options.Fade ? .01 : 1;
+            Location=new Point(dismissHome.X,dismissHome.Y+(int)Math.Round(animationStartOffset));Opacity=animationStartOpacity;
+            dismissClock.Restart();dismissFrames.Start();
+        }
+        Show();EnsureAboveApplications();
     }
     private void ApplyContentLayout()
     {
@@ -215,7 +230,12 @@ internal sealed class TrayPanel:Form
         grid.ResumeLayout(true);
         if(layout.Scroll&&incomingIcon!=null)grid.ScrollTo(int.MaxValue);
         UpdateOverflowFade();
-        if(resized&&Visible&&!IsDismissing)PositionPanel();
+        if(resized&&Visible&&!IsDismissing)
+        {
+            int offset=IsOpening?Location.Y-dismissHome.Y:0;
+            PositionPanel();
+            if(IsOpening){dismissHome=Location;Location=new Point(dismissHome.X,dismissHome.Y+offset);}
+        }
     }
     private void UpdateOverflowFade()
     {
@@ -232,24 +252,28 @@ internal sealed class TrayPanel:Form
         DismissStarted?.Invoke();
         var options=DismissSettings.Copy();options.Validate();
         if(!options.Enabled||options.DurationMs==0||!SystemAnimation.Enabled){Hide();return;}
-        dismissHome=Location;activeDismiss=options;IsDismissing=true;Enabled=false;
+        Point current=Location,home=IsOpening?dismissHome:Location;double opacity=Opacity;
+        CancelDismiss();dismissHome=home;Location=current;Opacity=opacity;
+        activeDismiss=options;IsDismissing=true;Enabled=false;
+        animationStartOffset=current.Y-home.Y;animationEndOffset=options.DistanceDip*DeviceDpi/96.0;animationStartOpacity=opacity;
         dismissClock.Restart();dismissFrames.Start();
     }
     private void DrawDismissFrame()
     {
-        if(!IsDismissing||activeDismiss==null){dismissFrames.Stop();return;}
-        double t=Math.Clamp(dismissClock.Elapsed.TotalMilliseconds/activeDismiss.DurationMs,0,1),p=activeDismiss.Progress(t);
-        if(t>=1){Hide();return;}
-        Location=new Point(dismissHome.X,dismissHome.Y+(int)Math.Round(activeDismiss.DistanceDip*DeviceDpi/96.0*p));
-        if(activeDismiss.Fade)Opacity=Math.Max(.01,1-p);
+        if((!IsDismissing&&!IsOpening)||activeDismiss==null){dismissFrames.Stop();return;}
+        double t=Math.Clamp(dismissClock.Elapsed.TotalMilliseconds/activeDismiss.DurationMs,0,1);
+        double p=IsOpening?1-activeDismiss.Progress(1-t):activeDismiss.Progress(t);
+        if(t>=1){if(IsDismissing)Hide();else CancelDismiss();return;}
+        Location=new Point(dismissHome.X,dismissHome.Y+(int)Math.Round(animationStartOffset+(animationEndOffset-animationStartOffset)*p));
+        if(activeDismiss.Fade)Opacity=Math.Clamp(animationStartOpacity+((IsOpening?1:0)-animationStartOpacity)*p,.01,1);
     }
     private void CancelDismiss()
     {
-        dismissFrames.Stop();if(IsDismissing)Location=dismissHome;
-        IsDismissing=false;activeDismiss=null;Opacity=1;Enabled=true;
+        dismissFrames.Stop();if(IsDismissing||IsOpening)Location=dismissHome;
+        IsDismissing=false;IsOpening=false;activeDismiss=null;Opacity=1;Enabled=true;
     }
     protected override void SetVisibleCore(bool value)
-    {base.SetVisibleCore(value);if(!value&&IsDismissing)CancelDismiss();}
+    {base.SetVisibleCore(value);if(!value&&(IsDismissing||IsOpening))CancelDismiss();}
     private void PositionPanel()
     {
         nint overflow=Native.FindWindowW("TopLevelWindowForOverflowXamlIsland",null);
@@ -269,5 +293,5 @@ internal sealed class TrayPanel:Form
     }
     private void BackgroundMenu(object? sender,MouseEventArgs e){if(e.Button==MouseButtons.Right)OpenMenu?.Invoke();}
     protected override void Dispose(bool disposing)
-    {if(disposing){dismissFrames.Dispose();CoreDrop.Dispose();tips.Dispose();foreach(var tile in tiles.Values)tile.Image?.Dispose();}base.Dispose(disposing);}
+    {if(disposing){CancelDismiss();dismissFrames.Dispose();CoreDrop.Dispose();tips.Dispose();foreach(var tile in tiles.Values)tile.Image?.Dispose();}base.Dispose(disposing);}
 }

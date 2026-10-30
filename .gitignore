@@ -12,3 +12,10 @@ settings.json
 diagnostics.json
 recovery-*.json
 close-animation-draft.json
+.tools/
+*.tmp
+*.bak
+*.log
+*.jsonl
+logs/
+restart-history.json

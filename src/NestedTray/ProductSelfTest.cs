@@ -182,7 +182,13 @@ internal static class ProductSelfTest
             var neighborMenuData=JsonSerializer.Deserialize<JsonElement>(File.ReadAllText(Path.Combine(neighborFolder,"menu.json")));
             nint neighborMenu=(nint)neighborMenuData.GetProperty("Handle").GetInt64();
             checks["ClickingNextIconDismissesPreviousMenu"]=!Native.IsWindowVisible(firstMenu);
+            checks["NextOriginalMenuPanelVisible"]=app.Panel.Visible;
+            checks["NextOriginalMenuVisible"]=Native.IsWindowVisible(neighborMenu);
             checks["NextOriginalMenuOpensWithoutClosingPanel"]=app.Panel.Visible&&Native.IsWindowVisible(neighborMenu);
+            // Reproduce delivery of the observer copy after the control's MouseUp
+            // has already opened its menu; it must not close that new menu.
+            app.OtherPointerDown(nextPoint,app.Panel.Handle);Pump(60);
+            checks["DelayedObserverPreservesNewContextMenu"]=app.Panel.Visible&&Native.IsWindowVisible(neighborMenu);
             var nextMenu=AutomationElement.FromHandle(neighborMenu);
             var nextCommand=nextMenu.FindFirst(TreeScope.Descendants,new PropertyCondition(AutomationElement.NameProperty,"NestedTray fixture command"));
             ((InvokePattern)nextCommand.GetCurrentPattern(InvokePattern.Pattern)).Invoke();Pump(100);

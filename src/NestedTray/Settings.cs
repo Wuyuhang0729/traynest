@@ -11,19 +11,33 @@ internal sealed class Settings
     internal static Settings Load()
     {
         if(!File.Exists(FilePath))return new();
-        try {return JsonSerializer.Deserialize<Settings>(File.ReadAllText(FilePath))??new();}
-        catch(Exception e) when(e is IOException or JsonException) {throw new InvalidOperationException("收纳配置无法读取，已停止启动以免覆盖原配置。",e);}
+        try
+        {
+            var value=JsonSerializer.Deserialize<Settings>(File.ReadAllText(FilePath));
+            if(value?.Collected==null||value.Collected.Any(rule=>string.IsNullOrWhiteSpace(rule)))throw new JsonException("Invalid collected rules.");
+            value.Collected=value.Collected.Distinct(StringComparer.Ordinal).ToList();return value;
+        }
+        catch(Exception e) when(e is IOException or JsonException or UnauthorizedAccessException) {throw new TrayNestException("TN1002",e);}
     }
     internal void Save()
     {
-        Directory.CreateDirectory(DirectoryPath);
-        File.WriteAllText(FilePath+".tmp",JsonSerializer.Serialize(this,new JsonSerializerOptions{WriteIndented=true}));
-        File.Move(FilePath+".tmp",FilePath,true);
+        try
+        {
+            Directory.CreateDirectory(DirectoryPath);
+            File.WriteAllText(FilePath+".tmp",JsonSerializer.Serialize(this,new JsonSerializerOptions{WriteIndented=true}));
+            if(File.Exists(FilePath))File.Copy(FilePath,FilePath+".bak",true);
+            File.Move(FilePath+".tmp",FilePath,true);
+        }
+        catch(Exception error)when(error is IOException or UnauthorizedAccessException){throw new TrayNestException("TN4001",error);}
     }
     internal static bool StartupEnabled
     {
         get {using var key=Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");return string.Equals(key?.GetValue("NestedTray")as string,"\""+Environment.ProcessPath+"\"",StringComparison.OrdinalIgnoreCase);}
-        set {using var key=Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");if(value)key.SetValue("NestedTray","\""+Environment.ProcessPath+"\"");else key.DeleteValue("NestedTray",false);}
+        set
+        {
+            try{using var key=Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");if(value)key.SetValue("NestedTray","\""+Environment.ProcessPath+"\"");else key.DeleteValue("NestedTray",false);}
+            catch(Exception error)when(error is UnauthorizedAccessException or System.Security.SecurityException or IOException){throw new TrayNestException("TN4001",error);}
+        }
     }
 }
 
@@ -41,13 +55,16 @@ internal sealed class RecoveryJournal
     }
     internal void Write(IEnumerable<RecoveryItem> items)
     {
-        File.WriteAllText(PathName+".tmp",JsonSerializer.Serialize(items));File.Move(PathName+".tmp",PathName,true);
+        try{File.WriteAllText(PathName+".tmp",JsonSerializer.Serialize(items));File.Move(PathName+".tmp",PathName,true);}
+        catch(Exception error)when(error is IOException or UnauthorizedAccessException){throw new TrayNestException("TN6002",error);}
     }
     internal void Complete() {File.Delete(PathName);watcher?.Dispose();}
     internal static void Watch(int parent,string path)
     {
         try {using var process=Process.GetProcessById(parent);process.WaitForExit();}catch(ArgumentException){}
         if(!File.Exists(path))return;
+        var diagnostics=new DiagnosticStore(System.IO.Path.GetDirectoryName(path)!);
+        diagnostics.Record("TN6003","Warning");
         try
         {
             var items=JsonSerializer.Deserialize<RecoveryItem[]>(File.ReadAllText(path))??[];
@@ -67,8 +84,10 @@ internal sealed class RecoveryJournal
                 }
                 allRestored&=restored;
             }
-            if(allRestored)File.Delete(path);
+            if(allRestored){File.Delete(path);diagnostics.Record("TN0003",context:new(){["RecoveryItems"]=items.Length.ToString()});}
+            else diagnostics.Record("TN6001","Error",context:new(){["RecoveryItems"]=items.Length.ToString()});
         }
-        catch(Exception e) when(e is IOException or JsonException) { /* Keep recovery file for manual inspection. */ }
+        catch(Exception e) when(e is IOException or JsonException or UnauthorizedAccessException)
+        {new DiagnosticStore(System.IO.Path.GetDirectoryName(path)!).Record("TN6001","Error",e); /* Keep recovery file for manual inspection. */ }
     }
 }

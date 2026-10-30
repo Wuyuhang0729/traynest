@@ -7,8 +7,8 @@ internal sealed class DragObserver:IDisposable
     private nint hook;
     private readonly Thread thread;
     private uint threadId;
-    internal Action<Point,nint,bool>? Down;
-    internal Action<Point,nint>? OtherDown;
+    internal Action<Point,nint,bool,long>? Down;
+    internal Action<Point,nint,long>? OtherDown;
     internal Action<Point>? Up;
     internal DragObserver(Control dispatcher)
     {
@@ -24,7 +24,8 @@ internal sealed class DragObserver:IDisposable
                         // Capture before Explorer handles the press or creates its drag window.
                         nint sourceRoot=down?Native.GetAncestor(Native.WindowFromPoint(data.Point),2):0;
                         bool nativeVisible=down&&NativeOverflow.Visible;
-                        dispatcher.BeginInvoke((Action)(()=>{if(right)OtherDown?.Invoke(point,sourceRoot);else if(down)Down?.Invoke(point,sourceRoot,nativeVisible);else Up?.Invoke(point);}));
+                        long observedAt=Environment.TickCount64;
+                        dispatcher.BeginInvoke((Action)(()=>{if(right)OtherDown?.Invoke(point,sourceRoot,observedAt);else if(down)Down?.Invoke(point,sourceRoot,nativeVisible,observedAt);else Up?.Invoke(point);}));
                     }
                 }
             }

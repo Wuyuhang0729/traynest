@@ -71,6 +71,11 @@ internal sealed class FixtureWindow : NativeWindow, IDisposable
 
     protected override void WndProc(ref Message message)
     {
+        if(message.Msg==0x8000+906)
+        {
+            var update=MakeData();update.Flags=1|2|4|(legacyIdentity?0u:0x20u);update.CallbackMessage=Callback;update.Icon=SystemIcons.Information.Handle;update.Tip=label;
+            NativeTray.Notify(1,ref update);update.Version=legacyIdentity?0u:4u;if(!legacyIdentity)NativeTray.Notify(4,ref update);return;
+        }
         if(message.Msg==0x8000+905){if(message.WParam!=0)timer.Stop();else timer.Start();return;}
         if(message.Msg==0x8000+903)
         {

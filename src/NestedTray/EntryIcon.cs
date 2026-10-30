@@ -23,6 +23,12 @@ internal sealed class EntryIcon:NativeWindow,IDisposable
         data.Version=4;if(!NativeTray.Notify(4,ref data))throw new InvalidOperationException("无法设置托盘入口交互版本。");
     }
     internal Rectangle Bounds=>Native.GetIconRect(Handle,Id,guid);
+    internal void Notify(string code)
+    {
+        var data=NativeTray.New(Handle,Id,guid);data.Flags=0x10|0x20;data.InfoTitle="TrayNest · "+code;
+        data.Info=ErrorCodes.Message(code)+" 右键入口可打开“诊断与反馈”。";data.InfoFlags=2;
+        NativeTray.Notify(1,ref data);
+    }
     protected override void WndProc(ref Message message)
     {
         if((uint)message.Msg==diagnosticsMessage){DiagnosticsRequested?.Invoke();message.Result=1;return;}

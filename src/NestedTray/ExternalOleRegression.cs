@@ -32,7 +32,7 @@ internal static class ExternalOleRegression
                     app.Panel.EntryRectangle=anchor;app.Panel.Open();
                     uint origin=(40u<<16)|40u;NativeTray.PostMessage(record.Window,0x8000+903,origin,0);phase=1;
                 }
-                else if(phase==1&&File.Exists(Path.Combine(directory,"external-ole-window.json")))
+                else if(phase==1&&!app.Panel.IsOpening&&File.Exists(Path.Combine(directory,"external-ole-window.json")))
                 {
                     ready.Stop();
                     nint source=(nint)JsonSerializer.Deserialize<JsonElement>(File.ReadAllText(Path.Combine(directory,"external-ole-window.json"))).GetProperty("Window").GetInt64();

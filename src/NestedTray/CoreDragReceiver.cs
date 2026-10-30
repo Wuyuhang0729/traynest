@@ -37,7 +37,7 @@ internal sealed class CoreDragReceiver:IDisposable
             subscribed=true;Status="Registered";
         }
         catch(Exception error)when(error is COMException or InvalidCastException or ArgumentException or NotSupportedException)
-        {Status=$"Unavailable at {stage}: 0x{error.HResult:X8} {error.Message}";Dispose();}
+        {Status=$"Unavailable at {stage}: 0x{error.HResult:X8} {error.Message}";AppDiagnostics.Warn("TN1102",stage,error);Dispose();}
         finally {if(factory!=0)Marshal.Release(factory);if(name!=0)WinrtDrag.WindowsDeleteString(name);}
     }
     public void Dispose()

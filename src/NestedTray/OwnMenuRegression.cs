@@ -15,7 +15,9 @@ internal static class OwnMenuRegression
         bool clicked=false;var button=new Button{Dock=DockStyle.Fill,Text="Own menu outside fixture"};button.Click+=(_,_)=>clicked=true;outside.Controls.Add(button);outside.Show();
         try
         {
-            Open();result["EntryCallbackOpensMenuWithoutPanel"]=app.OwnMenu.Visible&&!app.Panel.Visible;
+            long earlierPress=Environment.TickCount64;Open();result["EntryCallbackOpensMenuWithoutPanel"]=app.OwnMenu.Visible&&!app.Panel.Visible;
+            app.OtherPointerDown(new Point(50,50),outside.Handle,earlierPress);Pump(30);
+            result["EarlierObservedPressDoesNotCloseNewMenu"]=app.OwnMenu.Visible;
             var key=new Native.Input{Type=1,Keyboard=new Native.KeyInput{Key=27}};Send(key);Pump(40);key.Keyboard.Flags=2;Send(key);Pump(150);
             result["EscapeClosesMenuWithoutPanel"]=!app.OwnMenu.Visible;
             Open();var point=button.PointToScreen(new Point(30,30));Native.SetCursorPos(point.X,point.Y);Mouse(2);Pump(40);Mouse(4);Pump(150);
