@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType><TargetFramework>net9.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms><UseWPF>true</UseWPF><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
+    <PlatformTarget>x64</PlatformTarget><ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>NestedTray</AssemblyName><RootNamespace>NestedTray</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../verification/Shared/NativeTray.cs" Link="NativeTray.cs" />
+    <Compile Include="../../verification/StandaloneProbe/TrayPacket.cs" Link="TrayPacket.cs" />
+  </ItemGroup>
+</Project>
