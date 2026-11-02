@@ -28,21 +28,19 @@ heroType+=text('WINDOWS 11 x64  /  本地运行  /  预览版',88,804,20,'#819bb
 let heroUi=text('偶尔才用的工具，放在这里。',876,300,29,'#ecf4ff',500)+panel('panel',870,340,620)+pic(logo,1350,659,60,60)+text('需要时，点开收纳盒',1090,699,22,'#c8daf3')+`<path d="M1315 688h21" stroke="#82bfff" stroke-width="2"/>`+text('TrayNest 收纳面板 · 界面已放大',876,774,19,'#9bb2cf');
 emit('hero',900,[['background',heroBg],['product',heroUi],['brand',heroBrand],['typography',heroType]]);
 
-let hierarchyBg=rect(0,0,1600,960,0,'#f1f5fc');
-let hierarchyType=text('任务栏放不下，隐藏区也会挤。',72,135,55,'#14213b',700)+text('经常要找的留下，偶尔才用的再收一层。',76,202,27,'#65738c');
+let hierarchyBg=rect(0,0,1600,760,0,'#f1f5fc');
+let hierarchyType=text('TrayNest 多加了一层收纳',80,104,46,'#14213b',700)+text('原来',80,255,27,'#65738c',600)+text('加上',80,506,27,'#2563eb',600)+text('TrayNest',80,543,27,'#2563eb',600);
 let hierarchyCards='',hierarchyUi='';
-const levels=[
- ['最需要及时看到的','留在任务栏',['图标多了，任务栏放不下，','先把最重要的留在这里。']],
- ['经常要点开的','留在系统隐藏区',['其他图标进了隐藏区，','常用的也容易混在里面。']],
- ['偶尔才用到的','收进 TrayNest',['把偶尔才操作的工具，','再收进一个可展开的面板。']],
-];
-levels.forEach(([title,where,lines],i)=>{const x=64+i*504;hierarchyCards+=rect(x,278,464,544,24,'#ffffff',i===2?'#78aaff':'#d9e3f2')+text(title,x+30,345,29,'#17243b',600)+text(where,x+30,389,23,i===2?'#2563eb':'#65738c',500)+text(lines[0],x+30,713,23,'#65738c')+text(lines[1],x+30,752,23,'#65738c');});
-// Schematic Windows surfaces use generic symbols; only TrayNest is a product capture.
-hierarchyUi+=`<path d="M104 481v-10h384v10" stroke="#8ea7ca" fill="none" stroke-width="2"/>`+text('右下角就这点位置',194,455,21,'#6f86a9')+rect(98,493,396,106,18,'#222a38')+`<g transform="translate(130 515)"><rect width="62" height="62" rx="15" fill="#3979e8"/><path d="M15 17h32v24H30l-9 8v-8h-6z" fill="none" stroke="white" stroke-width="4" stroke-linejoin="round"/></g>`+text('消息',214,559,24,'#e1e9f7')+text('⌃',339,558,32,'#b6c5db')+text('09:41',387,558,24,'#d3dfef');
-hierarchyUi+=rect(644,464,280,170,18,'#222a38')+`<g fill="none" stroke="#c6d7ef" stroke-width="5" stroke-linecap="round"><path d="M688 510h34m-34 13h34m-34 13h22"/><path d="M763 532a16 16 0 1 1 32 0h9v14h-50v-14z"/></g>`+pic(logo,836,502,58,58)+text('还有一些工具',669,601,20,'#afc3e2');
-hierarchyUi+=panel('panel',1099,469,410,false);
-hierarchyType+=text('示例：将 TrayNest 入口放在系统隐藏区。收哪些图标、怎么排列，都按你的习惯来。',76,891,23,'#5e7395')+text('任务栏和系统隐藏区为示意，收纳面板为放大的产品界面。',76,929,18,'#8191a8');
-emit('hierarchy',960,[['background',hierarchyBg],['cards',hierarchyCards],['product',hierarchyUi],['typography',hierarchyType]]);
+const flowArrow=(x,y,color)=>`<path d="M${x} ${y}h68m-12-10 12 10-12 10" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
+for(const y of [183,435]){
+ hierarchyCards+=rect(260,y,300,140,20,'#ffffff','#d1dcea')+rect(670,y,300,140,20,'#ffffff','#d1dcea');
+ hierarchyType+=text('任务栏',292,y+54,31,'#17243b',600)+text('位置有限，留给最重要的',284,y+103,21,'#65738c')+text('系统隐藏区',702,y+54,31,'#17243b',600)+text(y===183?'其他图标挤在一起':'经常要点的留在这里',694,y+103,21,'#65738c');
+ hierarchyUi+=flowArrow(582,y+70,'#a6b4c8');
+}
+hierarchyCards+=rect(1080,415,440,180,22,'#2563eb')+rect(1110,378,205,38,12,'#dceaff');
+hierarchyType+=text('新增的自定义收纳层',1125,404,19,'#2563eb',600)+text('TrayNest',1170,477,35,'#ffffff',700)+text('自己决定收哪些图标',1112,550,27,'#ffffff',500)+text('收哪些图标，自己选；需要时再点开。',260,676,25,'#65738c');
+hierarchyUi+=flowArrow(992,505,'#2563eb')+pic(logo,1107,435,52,52);
+emit('hierarchy',760,[['background',hierarchyBg],['cards',hierarchyCards],['product',hierarchyUi],['typography',hierarchyType]]);
 
 let featureBg=rect(0,0,1600,1030,0,'url(#light)');
 let featureTitle=text('留住位置，也留住操作习惯。',72,140,59,'#14213b',700)+text('收纳之后，图标还是你熟悉的用法。',76,207,27,'#65738c');
