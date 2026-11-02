@@ -11,14 +11,12 @@ internal sealed class EntryIcon:NativeWindow,IDisposable
     internal EntryIcon()
     {
         CreateHandle(new CreateParams{Caption="NestedTray entry",ExStyle=0x08000080});
-        using var bitmap=new Bitmap(32,32);using(var graphics=Graphics.FromImage(bitmap))
-        {graphics.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;graphics.Clear(Color.Transparent);using var pen=new Pen(Color.FromArgb(82,166,255),3);graphics.DrawRectangle(pen,5,5,20,20);graphics.DrawRectangle(pen,12,12,14,14);}
-        nint handle=bitmap.GetHicon();try{icon=(Icon)Icon.FromHandle(handle).Clone();}finally{Native.DestroyIcon(handle);}
+        icon=AppIcon.Load(32);
         Add();clickDelay.Tick+=(_,_)=>{clickDelay.Stop();Open?.Invoke();};
     }
     private void Add()
     {
-        var data=NativeTray.New(Handle,Id,guid);data.Flags=1|2|4|0x20|0x80;data.CallbackMessage=Callback;data.Icon=icon.Handle;data.Tip="嵌套面板";
+        var data=NativeTray.New(Handle,Id,guid);data.Flags=1|2|4|0x20|0x80;data.CallbackMessage=Callback;data.Icon=icon.Handle;data.Tip="TrayNest · 托盘收纳盒";
         if(!NativeTray.Notify(0,ref data))throw new InvalidOperationException("无法创建托盘入口图标。");
         data.Version=4;if(!NativeTray.Notify(4,ref data))throw new InvalidOperationException("无法设置托盘入口交互版本。");
     }

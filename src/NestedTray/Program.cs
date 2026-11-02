@@ -6,6 +6,19 @@ internal static class Program
 {
     [STAThread]private static int Main(string[] args)
     {
+        if(args.Length==2&&args[0]=="--self-test-placement")
+        {Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);return PopupPlacementRegression.Run(args[1]);}
+        if(args.Length==2&&args[0]=="--self-test-experience")
+        {Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);return ExperienceRegression.Run(args[1]);}
+        if(args.Length==2&&args[0]=="--self-test-reorder-motion")
+        {Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);return ReorderMotionRegression.Run(args[1]);}
+        if(args.Length==2&&args[0]=="--self-test-panel-reorder")
+        {Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);return PanelReorderRegression.Run(args[1]);}
+        if(args.Length==3&&args[0]=="--configure-startup")return StartupRegistration.Configure(args[1],args[2]);
+        if(args.Length==2&&args[0]=="--self-test-startup")return StartupRegression.Run(args[1]);
+        if(args.Length==2&&args[0]=="--self-test-tray-connection")return TrayConnectionRegression.Run(args[1]);
+        if(args.Length is 2 or 3&&args[0]=="--self-test-fixed-tools")
+        {Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);return FixedToolsRegression.Run(args[1],args.Length==3?args[2]:"");}
         if(args.Length==2&&args[0]=="--self-test-diagnostics")
         {Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);return DiagnosticsRegression.Run(args[1]);}
         if(args.Length==4&&args[0]=="--self-test-crash-collector")
@@ -50,7 +63,7 @@ internal static class Program
         {try{AppDiagnostics.Error("TN9002",eventArgs.ExceptionObject as Exception);}catch{/* The watchdog remains independent of logging. */}};
         try
         {
-            AppDiagnostics.Info("TN0001");CompatibilityProbe.EnsureStartup();
+            AppDiagnostics.Info("TN0001",new(){["LaunchMode"]=args.Contains("--startup")?"Logon":"Manual"});CompatibilityProbe.EnsureStartup(args.Contains("--startup"));
             using var app=new TrayApplication();running=app;Application.Run(app);return failing?1:0;
         }
         catch(Exception error)
@@ -64,6 +77,9 @@ internal sealed class TrayApplication:ApplicationContext
     private readonly Settings settings=Settings.Load();
     private readonly RecoveryJournal recovery=new();
     private readonly TrayPanel panel=new();
+    private readonly ToolLibrary library;
+    private readonly ToolLauncher launcher=new();
+    private readonly ContextMenuStrip offlineMenu=new();
     private EntryIcon? entry;
     private TrayBridge? bridge;
     private DragObserver? drag;
@@ -92,6 +108,8 @@ internal sealed class TrayApplication:ApplicationContext
     private bool stopping;
     private readonly ToolStripMenuItem startup=new("开机启动");
     private int ticks;
+    private readonly long launchedAt=Environment.TickCount64;
+    private int startupCheckpoints;
     private long suppressMenuUntil;
     private Rectangle menuEntryAnchor;
     private long menuOpenedAt;
@@ -102,13 +120,20 @@ internal sealed class TrayApplication:ApplicationContext
     internal bool HasDragCandidate=>candidate!=null;
     internal TrayApplication(bool testMode=false)
     {
+        library=new ToolLibrary(settings);
         _=panel.Handle;
         try
         {
             recovery.Start();entry=new EntryIcon();bridge=new TrayBridge(settings,recovery);
             entry.DiagnosticsRequested=SaveDiagnostics;
             if(testMode)bridge.AllowedOwners=new();
-            bridge.Changed+=()=>panel.Render(bridge.Icons.Values);
+            panel.UseSavedOrder=true;panel.FixedColumns=settings.Columns;
+            panel.ToolStatus=launcher.Status;
+            bridge.Changed+=()=>Guard(RefreshPanel);
+            panel.Reordered=(record,index)=>Guard(()=>{library.Reorder(record.Rule,index);RefreshPanel();});
+            panel.OfflineInput=(record,code)=>Guard(()=>{BeginPanelInteraction();if(code==0x7B)ShowOfflineMenu(record);else LaunchTool(record);});
+            offlineMenu.Closed+=(_,_)=>menuOwner.Hide();
+            RefreshPanel();
             bridge.Faulted+=(code,error)=>panel.BeginInvoke((Action)(()=>
             {
                 if(stopping)return;
@@ -139,7 +164,7 @@ internal sealed class TrayApplication:ApplicationContext
                 finishDrag.Stop();finishDrag.Start();
             };
             finishDrag.Tick+=(_,_)=>CompleteNativeDrop();
-            panel.RemoveIcon=record=>Guard(()=>bridge.Restore(record));panel.OpenMenu=ShowMenu;
+            panel.RemoveIcon=record=>Guard(()=>{if(record.IsOffline){library.Forget(record.Rule);RefreshPanel();}else bridge.Restore(record);});panel.OpenMenu=ShowMenu;
             panel.DismissStarted=()=>{pairedWithOverflow=false;restoreOverflowUntil=0;contextIcon=null;};
             panel.VisibleChanged+=(_,_)=>{pairedWithOverflow=false;ignoreNativeCloseForPanelInteraction=false;panelOpenedUntil=Environment.TickCount64+700;if(!panel.Visible){restoreOverflowUntil=0;contextIcon=null;}};
             BuildMenu();bridge.Start();chevronBounds=NativeOverflow.ChevronBounds(bridge.ExplorerWindow);
@@ -150,11 +175,19 @@ internal sealed class TrayApplication:ApplicationContext
             timer.Tick+=(_,_)=>
             {
                 if(bridge!=null&&!bridge.ExplorerAlive){Restart();return;}
-                bridge?.Maintain();if(++ticks%7==0){UpdateEntryBounds();CacheNativeIconBounds();}if(ticks%33==0){bridge?.PruneClosed();chevronBounds=NativeOverflow.ChevronBounds(bridge!.ExplorerWindow);}
+                bridge?.Maintain();if(bridge?.Reconnecting==true)return;
+                if(!testMode&&startupCheckpoints<2&&Environment.TickCount64-launchedAt>=(startupCheckpoints==0?5000:30000))
+                {
+                    startupCheckpoints++;
+                    AppDiagnostics.Info("TN0012",new(){["Checkpoint"]=startupCheckpoints.ToString(),["SavedTools"]=settings.Tools.Count.ToString(),["CollectedIcons"]=bridge!.Icons.Values.Count(icon=>icon.Selected).ToString(),["KnownIcons"]=bridge.Icons.Count.ToString()});
+                }
+                if(++ticks%7==0){UpdateEntryBounds();CacheNativeIconBounds();}if(ticks%33==0){bridge?.PruneClosed();chevronBounds=NativeOverflow.ChevronBounds(bridge!.ExplorerWindow);}
+                if(ticks%33==0&&panel.Visible)panel.RefreshToolStates();
                 if((candidate!=null||releasedCandidate!=null)&&(Native.GetAsyncKeyState((int)Keys.Escape)&0x8000)!=0){cancelledDrag=true;candidate=null;releasedCandidate=null;finishDrag.Stop();panel.DragPreview=false;panel.SetIncomingIcon(null);}
                 bool escape=(Native.GetAsyncKeyState((int)Keys.Escape)&0x8000)!=0;
-                if(escape&&!escapeWasDown&&menu.Visible)menu.Close(ToolStripDropDownCloseReason.Keyboard);
-                else if(escape&&!escapeWasDown&&panel.Visible&&!cancelledDrag&&!IsContextSurface(Native.GetForegroundWindow()))panel.Dismiss();
+                bool reorderEscape=panel.HandleReorderEscape(escape);
+                if(!reorderEscape&&escape&&!escapeWasDown&&menu.Visible)menu.Close(ToolStripDropDownCloseReason.Keyboard);
+                else if(!reorderEscape&&escape&&!escapeWasDown&&panel.Visible&&!cancelledDrag&&!IsContextSurface(Native.GetForegroundWindow()))panel.Dismiss();
                 escapeWasDown=escape;
                 if(candidate!=null&&Native.GetCursorPos(out var point))
                 {
@@ -261,6 +294,7 @@ internal sealed class TrayApplication:ApplicationContext
     private Dictionary<string,object?> DiagnosticState()=>new()
     {
         ["KnownIcons"]=bridge?.Icons.Count??0,["CollectedIcons"]=bridge?.Icons.Values.Count(value=>value.Selected)??0,
+        ["SavedTools"]=settings.Tools.Count,["SavedRules"]=settings.Collected.Count,["StartupEnabled"]=Settings.StartupEnabled,
         ["MissingInteractionMetadata"]=bridge?.Icons.Values.Count(value=>!value.CanCollect)??0,
         ["HiddenStateReapplications"]=bridge?.HiddenStateReapplications??0,["PanelVisible"]=panel.Visible,["PanelDpi"]=panel.DeviceDpi,
         ["NativeOverflowVisible"]=NativeOverflow.Visible,["ExplorerAlive"]=bridge?.ExplorerAlive??false,
@@ -322,6 +356,33 @@ internal sealed class TrayApplication:ApplicationContext
         if(!IsContextSurface(sourceRoot)&&!IsOwnPopup(sourceRoot))panel.Dismiss();
     }
     private void UpdateEntryBounds(){if(entry!=null){var rect=entry.Bounds;if(!rect.IsEmpty)panel.EntryRectangle=rect;}}
+    private void RefreshPanel()
+    {
+        var records=bridge?.Icons.Values.ToArray()??[];
+        if(library.EnsureEntries(records))settings.Save();
+        var ordered=library.Snapshot(records);foreach(var record in ordered.Where(record=>!record.IsOffline))launcher.Registered(record.Rule);
+        panel.SetPlacement(settings.Placement);panel.FixedColumns=settings.Columns;panel.Render(ordered);
+    }
+    private void LaunchTool(IconRecord record)
+    {
+        var saved=settings.Tools.FirstOrDefault(tool=>tool.Rule==record.Rule);if(saved==null)return;
+        var result=launcher.Launch(saved);panel.RefreshToolStates();panel.ShowToolStatus(record,result.Message);
+    }
+    private void ShowOfflineMenu(IconRecord record)
+    {
+        menu.Close();offlineMenu.Items.Clear();
+        offlineMenu.Items.Add("尝试启动",null,(_,_)=>Guard(()=>LaunchTool(record)));
+        offlineMenu.Items.Add("设置启动文件…",null,(_,_)=>Guard(()=>
+        {
+            var saved=settings.Tools.FirstOrDefault(tool=>tool.Rule==record.Rule);if(saved==null)return;
+            using var dialog=new OpenFileDialog{Title="选择此工具的程序或快捷方式",Filter="程序或快捷方式 (*.exe;*.lnk)|*.exe;*.lnk",CheckFileExists=true};
+            if(dialog.ShowDialog()!=DialogResult.OK)return;
+            string previous=saved.LaunchTarget;saved.LaunchTarget=dialog.FileName;try{settings.Save();}catch{saved.LaunchTarget=previous;throw;}
+            panel.ShowToolStatus(record,"启动文件已保存；单击图标可尝试启动。");
+        }));
+        offlineMenu.Items.Add("移出收纳",null,(_,_)=>Guard(()=>{library.Forget(record.Rule);RefreshPanel();}));
+        menuOwner.Location=Cursor.Position;menuOwner.Show();Native.SetForegroundWindow(menuOwner.Handle);menuOpenedAt=Environment.TickCount64;offlineMenu.Show(menuOwner,Point.Empty);
+    }
     private void Guard(Action action){try{action();}catch(Exception error){DiagnosticUi.Error(error is TrayNestException known?known.Code:"TN3002",error);}}
     private void BuildMenu()
     {
@@ -332,11 +393,32 @@ internal sealed class TrayApplication:ApplicationContext
         menu.Items.Add("诊断与反馈…",null,(_,_)=>{menu.Close(ToolStripDropDownCloseReason.ItemClicked);Guard(()=>DiagnosticUi.Show(AppDiagnostics.Store.LastProblem));});
         startup.Checked=Settings.StartupEnabled;
         startup.Click+=(_,_)=>{menu.Close(ToolStripDropDownCloseReason.ItemClicked);Guard(()=>{Settings.StartupEnabled=!Settings.StartupEnabled;startup.Checked=Settings.StartupEnabled;});};menu.Items.Add(startup);
-        menu.Items.Add("移回所有图标",null,(_,_)=>{menu.Close(ToolStripDropDownCloseReason.ItemClicked);Guard(()=>{if(bridge!=null)foreach(var record in bridge.Icons.Values.Where(value=>value.Selected).ToArray())bridge.Restore(record);settings.Collected.Clear();settings.Save();});});
+        var columns=new ToolStripMenuItem("每行图标数");
+        foreach(int count in new[]{5,6,7,8}){var item=new ToolStripMenuItem(count.ToString()){Checked=settings.Columns==count};item.Click+=(_,_)=>Guard(()=>{int previous=settings.Columns;settings.Columns=count;try{settings.Save();}catch{settings.Columns=previous;throw;}foreach(ToolStripMenuItem sibling in columns.DropDownItems)sibling.Checked=sibling==item;RefreshPanel();});columns.DropDownItems.Add(item);}menu.Items.Add(columns);
+        menu.Items.Add(CreatePlacementMenu(settings,panel.SetPlacement,Guard));
+        menu.Items.Add("移回全部并清空收纳…",null,(_,_)=>
+        {
+            menu.Close(ToolStripDropDownCloseReason.ItemClicked);
+            using var confirm=BulkRestoreDialog.Create();
+            if(confirm.ShowDialog()!=DialogResult.OK)return;
+            Guard(()=>{if(bridge==null)return;var result=bridge.RestoreAll(true);RefreshPanel();MessageBox.Show(result.Message,"TrayNest",MessageBoxButtons.OK,result.Failed>0?MessageBoxIcon.Warning:MessageBoxIcon.Information);});
+        });
         menu.Items.Add(new ToolStripSeparator());menu.Items.Add("退出",null,(_,_)=>{menu.Close(ToolStripDropDownCloseReason.ItemClicked);Stop();});
+    }
+    internal static ToolStripMenuItem CreatePlacementMenu(Settings settings,Action<PopupPlacement> apply,Action<Action> guard)
+    {
+        var placement=new ToolStripMenuItem("弹出位置");
+        foreach(var side in new[]{PopupPlacement.Left,PopupPlacement.Above})
+        {
+            var item=new ToolStripMenuItem(side==PopupPlacement.Left?"左侧":"上方"){Checked=settings.Placement==side};
+            item.Click+=(_,_)=>guard(()=>{settings.ChangePlacement(side);foreach(ToolStripMenuItem sibling in placement.DropDownItems)sibling.Checked=sibling==item;apply(side);});
+            placement.DropDownItems.Add(item);
+        }
+        return placement;
     }
     private bool HandleOwnMenuPress(Point point,bool right,long observedAt=0)
     {
+        if(offlineMenu.Visible){if(observedAt>0&&observedAt<=menuOpenedAt||offlineMenu.Bounds.Contains(point))return true;offlineMenu.Close(ToolStripDropDownCloseReason.AppClicked);}
         if(!menu.Visible)return false;
         if(observedAt>0&&observedAt<=menuOpenedAt)return true;
         if(menu.Bounds.Contains(point))return true;
@@ -346,6 +428,7 @@ internal sealed class TrayApplication:ApplicationContext
     }
     private void ShowMenu()
     {
+        offlineMenu.Close();
         if(Environment.TickCount64<suppressMenuUntil){suppressMenuUntil=0;return;}
         if(menu.Visible){menu.Close(ToolStripDropDownCloseReason.CloseCalled);return;}
         BeginPanelInteraction();startup.Checked=Settings.StartupEnabled;menuEntryAnchor=entry?.Bounds??Rectangle.Empty;
@@ -377,5 +460,5 @@ internal sealed class TrayApplication:ApplicationContext
     }
     internal void Shutdown()=>Stop();
     protected override void Dispose(bool disposing)
-    {if(disposing){Stop();timer.Dispose();discovery.Dispose();finishDrag.Dispose();menu.Dispose();menuOwner.Dispose();panel.Dispose();}base.Dispose(disposing);}
+    {if(disposing){Stop();timer.Dispose();discovery.Dispose();finishDrag.Dispose();menu.Dispose();offlineMenu.Dispose();menuOwner.Dispose();panel.Dispose();library.Dispose();}base.Dispose(disposing);}
 }

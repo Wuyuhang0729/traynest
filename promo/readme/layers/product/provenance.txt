@@ -1,0 +1,1 @@
+Current production TrayPanel compiled from src/NestedTray; 4x logical size (16px icon / 40px cell), 5 columns, public icon fixtures from existing video source manifest. No user desktop, settings, application titles or real tray takeover. Reorder highlight and offline/waiting statuses are demonstration states.

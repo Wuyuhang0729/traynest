@@ -1,0 +1,92 @@
+﻿[
+    {
+        "Provider":  "Simple Icons; third-party brand symbols; owners retain their marks",
+        "SHA256":  "024626EC72D252BDED6042E9E38052440BADA37A36064EDD415FAC18BE1E6824",
+        "Name":  "bitwarden",
+        "Source":  "https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/bitwarden.svg"
+    },
+    {
+        "Provider":  "Simple Icons; third-party brand symbols; owners retain their marks",
+        "SHA256":  "1D364B72C9EAF1FE37D17CA88CD8FB541308DC0F3B09E2AB3B824F380B3493D5",
+        "Name":  "discord",
+        "Source":  "https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/discord.svg"
+    },
+    {
+        "Provider":  "Simple Icons; third-party brand symbols; owners retain their marks",
+        "SHA256":  "1C9EA4AC8E318F3F6A598568DF1A38ECE03B7BC52A3A72D48C9E760340D7AEEC",
+        "Name":  "dropbox",
+        "Source":  "https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/dropbox.svg"
+    },
+    {
+        "Provider":  "Simple Icons; third-party brand symbols; owners retain their marks",
+        "SHA256":  "A4CD115CAA7A2BD849CFC4088EFE7967D26A0982113DBBE02041EA014479CCBD",
+        "Name":  "syncthing",
+        "Source":  "https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/syncthing.svg"
+    },
+    {
+        "Provider":  "Simple Icons; third-party brand symbols; owners retain their marks",
+        "SHA256":  "35442EF97CA7C906D3F882A64EB1EAEA6AB351BFD4303C1B0B19793D3246B7F0",
+        "Name":  "autohotkey",
+        "Source":  "https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/autohotkey.svg"
+    },
+    {
+        "Provider":  "Simple Icons; third-party brand symbols; owners retain their marks",
+        "SHA256":  "33A13D861D779504FC1A1562A3FE3568B8EF6740E1D8E4F928E9512944214970",
+        "Name":  "rustdesk",
+        "Source":  "https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/rustdesk.svg"
+    },
+    {
+        "Provider":  "Simple Icons; third-party brand symbols; owners retain their marks",
+        "SHA256":  "80ECDDE08C2A4CDDAA64447FCBFAFAB81326864671CD33B7FC3D40C4C8661DFC",
+        "Name":  "tailscale",
+        "Source":  "https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/tailscale.svg"
+    },
+    {
+        "Provider":  "Simple Icons; third-party brand symbols; owners retain their marks",
+        "SHA256":  "B0E4CFC12712C840D4D630C9A717200FBD09AEEADBD3FAEAC13BDA2E2ED050B0",
+        "Name":  "nvidia",
+        "Source":  "https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/nvidia.svg"
+    },
+    {
+        "Provider":  "Simple Icons; third-party brand symbols; owners retain their marks",
+        "SHA256":  "DA5B2F13D38CA61C88A227F58E3BEBCBCBB55412D97678ECFF49AE7C603F9A7B",
+        "Name":  "zoom",
+        "Source":  "https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/zoom.svg"
+    },
+    {
+        "Provider":  "Simple Icons; third-party brand symbols; owners retain their marks",
+        "SHA256":  "523A9295F2E3A8BE7904E9E914AD030A4AE13597421F9EE81122BE705B2E60BE",
+        "Name":  "nextcloud",
+        "Source":  "https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/nextcloud.svg"
+    },
+    {
+        "Provider":  "Simple Icons; third-party brand symbols; owners retain their marks",
+        "SHA256":  "7E678ABA9E463140EC8603F0E6CC78BB80F6CAF9CD3EE73335026A90729A1A40",
+        "Name":  "googledrive",
+        "Source":  "https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/googledrive.svg"
+    },
+    {
+        "Provider":  "Simple Icons; third-party brand symbols; owners retain their marks",
+        "SHA256":  "25D0D4387AF0999EB5DC79B165ECFD7B972FF43047406DA533F3207AC92C0A57",
+        "Name":  "intel",
+        "Source":  "https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/intel.svg"
+    },
+    {
+        "Provider":  "Simple Icons public brand symbols",
+        "SHA256":  "F23C317B279F53DCD2260A6CD2E279F7A696F87DCB3DA259D6201F05BBC45B0D",
+        "Name":  "slack",
+        "Source":  "https://raw.githubusercontent.com/simple-icons/simple-icons/11.15.0/icons/slack.svg"
+    },
+    {
+        "Provider":  "Simple Icons public brand symbols",
+        "SHA256":  "43320B9321C3FACE2313ECFBBD741E9BC17B67ACFCEF488546FAC5E09E729965",
+        "Name":  "microsoftonedrive",
+        "Source":  "https://raw.githubusercontent.com/simple-icons/simple-icons/11.15.0/icons/microsoftonedrive.svg"
+    },
+    {
+        "Provider":  "Simple Icons public brand symbols",
+        "SHA256":  "3BF8CCEEAD820AEC50D4EE825A3FD02C5A1CD6665CC9CF4CBF3D9C8861A204BB",
+        "Name":  "github",
+        "Source":  "https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/github.svg"
+    }
+]

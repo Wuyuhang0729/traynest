@@ -9,6 +9,7 @@ internal sealed class IconRecord:IDisposable
     internal string Key="",Rule="",Tooltip="",Executable="";
     internal int ProcessId;
     internal bool Selected;
+    internal bool IsOffline;
     internal bool RegistrationKnown;
     internal bool CanCollect=>Callback!=0||RegistrationKnown;
     internal Bitmap? Image;

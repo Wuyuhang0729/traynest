@@ -10,7 +10,7 @@ internal static class DiagnosticUi
     {
         using var window=new Form
         {
-            Text=problem==null?"TrayNest · 诊断与反馈":$"TrayNest · {problem.Code}",
+            Icon=AppIcon.Load(),Text=problem==null?"TrayNest · 诊断与反馈":$"TrayNest · {problem.Code}",
             ClientSize=new Size(680,460),MinimumSize=new Size(520,360),StartPosition=FormStartPosition.CenterScreen,
             ShowInTaskbar=false,TopMost=true,AutoScaleMode=AutoScaleMode.Dpi
         };
@@ -57,12 +57,17 @@ internal static class CompatibilityProbe
     internal static bool Supported(bool windows,int build,System.Runtime.InteropServices.Architecture process,System.Runtime.InteropServices.Architecture os)
         =>windows&&build>=22000&&process==System.Runtime.InteropServices.Architecture.X64&&os==System.Runtime.InteropServices.Architecture.X64;
 
-    internal static void EnsureStartup()
+    internal static void EnsureStartup(bool logon=false)
     {
         if(!Supported(OperatingSystem.IsWindows(),Environment.OSVersion.Version.Build,System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture,System.Runtime.InteropServices.RuntimeInformation.OSArchitecture))
             throw new TrayNestException("TN1001");
-        var wait=Stopwatch.StartNew();
-        while(Native.FindWindowW("Shell_TrayWnd",null)==0&&wait.ElapsedMilliseconds<20000)Thread.Sleep(100);
-        if(Native.FindWindowW("Shell_TrayWnd",null)==0)throw new TrayNestException("TN1001");
+        if(!WaitForTray(()=>Native.FindWindowW("Shell_TrayWnd",null)!=0,()=>Environment.TickCount64,Thread.Sleep,logon?120000:20000))throw new TrayNestException("TN1004");
+        AppDiagnostics.Info("TN0011",new(){["LaunchMode"]=logon?"Logon":"Manual"});
+    }
+    internal static bool WaitForTray(Func<bool> ready,Func<long> clock,Action<int> sleep,long timeout)
+    {
+        long started=clock();
+        while(!ready()){if(clock()-started>=timeout)return false;sleep(200);}
+        return true;
     }
 }

@@ -1,0 +1,52 @@
+﻿[
+    {
+        "id":  "qbittorrent",
+        "repository":  "https://github.com/qbittorrent/qBittorrent",
+        "file":  "icons/qbittorrent.ico",
+        "name":  "qBittorrent",
+        "source":  "https://raw.githubusercontent.com/qbittorrent/qBittorrent/master/src/icons/qbittorrent.ico",
+        "role":  "下载管理",
+        "usage":  "Public official icon used for identification in product demonstration; ownership remains with respective authors; no endorsement or compatibility certification implied.",
+        "sha256":  "C5C6DA117B4319F378FC2523B6B6299048DB5EC7783097B5629CD61BA516D833"
+    },
+    {
+        "id":  "sharex",
+        "repository":  "https://github.com/ShareX/ShareX",
+        "file":  "icons/sharex.png",
+        "name":  "ShareX",
+        "source":  "https://raw.githubusercontent.com/ShareX/ShareX/develop/ShareX.HelpersLib/Resources/ShareX_Logo.png",
+        "role":  "截图与分享",
+        "usage":  "Public official icon used for identification in product demonstration; ownership remains with respective authors; no endorsement or compatibility certification implied.",
+        "sha256":  "59AB47AF2F7C733C3EB9E865491AA833839C33046BC2DC8C79EE7388E4E87820"
+    },
+    {
+        "id":  "localsend",
+        "repository":  "https://github.com/localsend/localsend",
+        "file":  "icons/localsend.png",
+        "name":  "LocalSend",
+        "source":  "https://raw.githubusercontent.com/localsend/localsend/main/app/assets/img/logo-256.png",
+        "role":  "跨设备传文件",
+        "usage":  "Public official icon used for identification in product demonstration; ownership remains with respective authors; no endorsement or compatibility certification implied.",
+        "sha256":  "D2E8192CDCB02D5615EED91ECC3E9FE9C4289A3D2A4D7ADECB9037D8F015FE33"
+    },
+    {
+        "id":  "keepassxc",
+        "repository":  "https://github.com/keepassxreboot/keepassxc",
+        "file":  "icons/keepassxc.png",
+        "name":  "KeePassXC",
+        "source":  "https://raw.githubusercontent.com/keepassxreboot/keepassxc/develop/share/icons/application/256x256/apps/keepassxc.png",
+        "role":  "密码管理",
+        "usage":  "Public official icon used for identification in product demonstration; ownership remains with respective authors; no endorsement or compatibility certification implied.",
+        "sha256":  "517E021AE33591D41139AC187D84B3D6A64564DE4942858BF8D789F25C17F9C5"
+    },
+    {
+        "id":  "obs",
+        "repository":  "https://github.com/obsproject/obs-studio",
+        "file":  "icons/obs.png",
+        "name":  "OBS Studio",
+        "source":  "https://raw.githubusercontent.com/obsproject/obs-studio/master/frontend/cmake/linux/icons/obs-logo-256.png",
+        "role":  "录屏与直播",
+        "usage":  "Public official icon used for identification in product demonstration; ownership remains with respective authors; no endorsement or compatibility certification implied.",
+        "sha256":  "B56657342921CEFCB7AAC7F9AC34DEF73974ADE8BBD49E60C8E1230863FE307B"
+    }
+]

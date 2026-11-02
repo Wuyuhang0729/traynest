@@ -19,9 +19,17 @@ internal sealed class TrayBridge:IDisposable
     private readonly nint module=Native.GetModuleHandleW(null);
     private nint explorer,receiver;
     private bool changingState,disposing,faulted;
+    private readonly TransientTrayConnection forwarding=new();
+    internal bool Reconnecting=>forwarding.Pending;
     internal bool RestoredAll{get;private set;}=true;
+    internal Action<IconRecord,uint>? StateOverride;
+    private bool recoveryUnsafe;
     internal TrayBridge(Settings settings,RecoveryJournal recovery)
-    {this.settings=settings;this.recovery=recovery;procedure=Receive;}
+    {
+        this.settings=settings;this.recovery=recovery;procedure=Receive;
+        forwarding.Interrupted+=()=>AppDiagnostics.Warn("TN2010");
+        forwarding.Recovered+=()=>AppDiagnostics.Info("TN2011");
+    }
     internal void Start()
     {
         explorer=Native.FindWindowW("Shell_TrayWnd",null);
@@ -41,6 +49,14 @@ internal sealed class TrayBridge:IDisposable
     {
         if(disposing||receiver==0)return;
         if(!ExplorerAlive){Fail("TN2003");return;}
+        if(forwarding.Pending)
+        {
+            bool recovered=forwarding.Probe(Environment.TickCount64,()=>Native.SendMessageTimeoutW(explorer,0,0,0,0x22,150,out _)!=0);
+            if(!recovered)return;
+            foreach(var record in Icons.Values)record.RehideAfter=0;
+            if(AllowedOwners==null)RefreshExisting();
+            else foreach(var record in Icons.Values)NativeTray.PostMessage(record.Window,Native.RegisterWindowMessageW("TaskbarCreated"),0,0);
+        }
         if(Native.FindWindowW("Shell_TrayWnd",null)!=receiver)
             Native.SetWindowPos(receiver,new nint(-1),0,0,0,0,0x213);
         long now=Environment.TickCount64;
@@ -56,9 +72,12 @@ internal sealed class TrayBridge:IDisposable
     private void Fail(string code,Exception? error=null) {if(!faulted){faulted=true;Faulted?.Invoke(code,error);}}
     private nint Forward(uint message,nuint wp,nint lp)
     {
-        if(Native.SendMessageTimeoutW(explorer,message,wp,lp,0x22,750,out nuint result)==0)
-        {if(!disposing)Fail("TN2001");return 0;}
-        return unchecked((nint)result);
+        if(disposing)return Native.SendMessageTimeoutW(explorer,message,wp,lp,0x22,750,out nuint finalResult)!=0?unchecked((nint)finalResult):0;
+        return forwarding.Send(Environment.TickCount64,()=>
+        {
+            bool success=Native.SendMessageTimeoutW(explorer,message,wp,lp,0x22,750,out nuint result)!=0;
+            return(success,result);
+        });
     }
     private nint ForwardBytes(nuint tag,byte[] bytes,nuint wp)
     {
@@ -166,15 +185,18 @@ internal sealed class TrayBridge:IDisposable
     {
         if(!record.CanCollect)throw new TrayNestException("TN2101");
         bool added=!settings.Collected.Contains(record.Rule),attempted=false;
+        var previousTools=settings.Tools.ToList();
         if(added)settings.Collected.Add(record.Rule);
         try
         {
+            if(!settings.Tools.Any(tool=>tool.Rule==record.Rule))settings.Tools.Add(SavedTool.FromRecord(record));
             record.Selected=true;record.RehideAfter=Environment.TickCount64+450;SaveRecovery();
             attempted=true;SetState(record,1);settings.Save();Changed?.Invoke();
         }
         catch
         {
             if(added)settings.Collected.Remove(record.Rule);
+            settings.Tools=previousTools;
             record.Selected=false;
             try{if(attempted)SetState(record,record.OriginalState);SaveRecovery();}
             catch(Exception undo){record.Selected=true;AppDiagnostics.Error("TN6001",undo);Fail("TN6001",undo);}
@@ -192,25 +214,57 @@ internal sealed class TrayBridge:IDisposable
     }
     internal void Restore(IconRecord record,bool forget=true)
     {
-        var previousRules=settings.Collected.ToList();bool previousSelected=record.Selected;
+        var previousRules=settings.Collected.ToList();var previousTools=settings.Tools.ToList();
+        var group=forget?Icons.Values.Where(value=>value.Selected&&value.Rule==record.Rule).Append(record).Distinct().ToArray():[record];
+        var selected=group.ToDictionary(value=>value,value=>value.Selected);
+        // Verify the safety record before changing native state or releasing a rule.
+        try{SaveRecovery();}catch{recoveryUnsafe=true;throw;}
         try
         {
-            if(forget)settings.Collected.Remove(record.Rule);
-            record.Selected=false;SetState(record,record.OriginalState);
-            if(forget)settings.Save();SaveRecovery();
+            if(forget){settings.Collected.Remove(record.Rule);settings.Tools.RemoveAll(tool=>tool.Rule==record.Rule);}
+            foreach(var item in group){SetState(item,item.OriginalState);item.Selected=false;}
+            try{SaveRecovery();}catch{recoveryUnsafe=true;throw;}
+            if(forget)settings.Save();
         }
         catch
         {
-            settings.Collected=previousRules;record.Selected=previousSelected;
-            try{SetState(record,previousSelected?1:record.OriginalState);SaveRecovery();}
-            catch(Exception undo){AppDiagnostics.Error("TN6001",undo);Fail("TN6001",undo);}
+            settings.Collected=previousRules;settings.Tools=previousTools;
+            foreach(var item in group)item.Selected=selected[item];
+            // Record rollback intent before hiding any restored native icons again.
+            try{SaveRecovery();foreach(var item in group)SetState(item,selected[item]?1:item.OriginalState);}
+            catch(Exception undo){recoveryUnsafe=true;AppDiagnostics.Error("TN6001",undo);Fail("TN6001",undo);}
             Changed?.Invoke();throw;
         }
-        if(forget)foreach(var sibling in Icons.Values.Where(value=>value.Selected&&value.Rule==record.Rule&&value!=record).ToArray())Restore(sibling,false);
         Changed?.Invoke();
+    }
+    internal BulkRestoreResult RestoreAll(bool confirmed)
+    {
+        if(!confirmed)return new(0,0,0,false);
+        var online=Icons.Values.Where(value=>value.Selected).GroupBy(value=>value.Rule).Select(group=>group.ToArray()).ToArray();
+        var offline=settings.Collected.Except(online.Select(group=>group[0].Rule)).ToArray();
+        int restored=0,cleared=0,failed=0;
+        foreach(var group in online)
+        {
+            if(recoveryUnsafe){failed+=group.Length;continue;}
+            try{Restore(group[0]);restored+=group.Length;}
+            catch(Exception error){failed+=group.Length;AppDiagnostics.Error(error is TrayNestException known?known.Code:"TN3002",error);}
+        }
+        if(!recoveryUnsafe&&offline.Length>0)
+        {
+            var rules=settings.Collected.ToList();var tools=settings.Tools.ToList();
+            try
+            {
+                settings.Collected.RemoveAll(offline.Contains);settings.Tools.RemoveAll(tool=>offline.Contains(tool.Rule));
+                settings.Save();cleared=offline.Length;
+            }
+            catch(Exception error){settings.Collected=rules;settings.Tools=tools;failed+=offline.Length;AppDiagnostics.Error("TN4001",error);}
+        }
+        else failed+=offline.Length;
+        Changed?.Invoke();return new(restored,cleared,failed,recoveryUnsafe);
     }
     private void SetState(IconRecord record,uint state)
     {
+        if(StateOverride!=null){StateOverride(record,state);return;}
         var data=NativeTray.New(record.Window,record.Id,record.Guid);data.Flags=8|(record.Guid==Guid.Empty?0u:0x20u);data.StateMask=1;data.State=state;
         changingState=true;
         try {if(!NativeTray.Notify(1,ref data)&&Native.IsWindow(record.Window))throw new InvalidOperationException("系统未接受图标状态变更。");}

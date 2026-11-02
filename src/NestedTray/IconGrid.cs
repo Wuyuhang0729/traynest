@@ -4,14 +4,81 @@ using System.Runtime.InteropServices;
 namespace NestedTray;
 internal sealed class IconGrid:FlowLayoutPanel
 {
+    private sealed class GridEngine: System.Windows.Forms.Layout.LayoutEngine
+    {
+        public override bool Layout(object container,LayoutEventArgs args){((IconGrid)container).ArrangeIcons();return false;}
+    }
+    private readonly GridEngine engine=new();
+    public override System.Windows.Forms.Layout.LayoutEngine LayoutEngine=>engine;
+    private readonly Dictionary<Control,Rectangle> targets=new(),origins=new();
+    private readonly System.Windows.Forms.Timer motion=new(){Interval=15};
+    private readonly System.Diagnostics.Stopwatch motionClock=new();
+    private bool arranging,animateLayout;
+    internal const int ReorderDurationMs=180;
+    internal bool IsAnimatingOrder=>motion.Enabled;
+    internal IconGrid(){motion.Tick+=(_,_)=>DrawMotion();}
     private int contentHeight,offset;
     internal int ScrollOffset=>offset;
     internal int MaximumOffset=>Math.Max(0,contentHeight-ClientSize.Height);
     internal Action? Scrolled;
+    internal int OrderIndexAt(Point point)
+    {
+        if(Controls.Count==0)return -1;
+        var cell=Controls[0].Size;int columns=Math.Max(1,ClientSize.Width/Math.Max(1,cell.Width));
+        return Math.Clamp((point.Y+offset)/Math.Max(1,cell.Height)*columns+point.X/Math.Max(1,cell.Width),0,Controls.Count-1);
+    }
+    internal void AnimateOrder(Action change)
+    {
+        bool previous=animateLayout;animateLayout=SystemAnimation.Enabled;SuspendLayout();
+        try{change();}finally{ResumeLayout(true);animateLayout=previous;}
+    }
+    internal void MoveIcon(Control tile,int index)=>AnimateOrder(()=>Controls.SetChildIndex(tile,index));
+    private void ArrangeIcons()
+    {
+        if(arranging)return;
+        arranging=true;
+        try
+        {
+            var next=new Dictionary<Control,Rectangle>();
+            if(Controls.Count>0)
+            {
+                var cell=Controls[0].Size;int columns=Math.Max(1,ClientSize.Width/Math.Max(1,cell.Width));
+                for(int index=0;index<Controls.Count;index++)next[Controls[index]]=new Rectangle(index%columns*cell.Width,index/columns*cell.Height-offset,cell.Width,cell.Height);
+            }
+            bool changed=next.Count!=targets.Count||next.Any(pair=>!targets.TryGetValue(pair.Key,out var old)||old!=pair.Value);
+            if(!changed&&motion.Enabled)return;
+            if(changed&&animateLayout&&next.Keys.All(targets.ContainsKey))
+            {
+                origins.Clear();foreach(var tile in next.Keys)origins[tile]=tile.Bounds;
+                targets.Clear();foreach(var pair in next)targets[pair.Key]=pair.Value;
+                motionClock.Restart();motion.Start();return;
+            }
+            motion.Stop();origins.Clear();targets.Clear();
+            foreach(var pair in next){targets[pair.Key]=pair.Value;if(pair.Key.Bounds!=pair.Value)pair.Key.Bounds=pair.Value;}
+        }
+        finally{arranging=false;}
+    }
+    private void DrawMotion()
+    {
+        double t=Math.Clamp(motionClock.Elapsed.TotalMilliseconds/ReorderDurationMs,0,1),ease=1-Math.Pow(1-t,3);
+        arranging=true;SuspendLayout();
+        try
+        {
+            foreach(var pair in targets.ToArray())
+            {
+                if(pair.Key.IsDisposed||!Controls.Contains(pair.Key))continue;
+                var start=origins.GetValueOrDefault(pair.Key,pair.Value);var end=pair.Value;
+                pair.Key.Bounds=new Rectangle((int)Math.Round(start.X+(end.X-start.X)*ease),(int)Math.Round(start.Y+(end.Y-start.Y)*ease),end.Width,end.Height);
+            }
+        }
+        finally{ResumeLayout(false);arranging=false;}
+        if(t>=1){motion.Stop();origins.Clear();}
+    }
     public override Rectangle DisplayRectangle=>new(0,-offset,ClientSize.Width,Math.Max(ClientSize.Height,contentHeight));
     internal void ConfigureContent(int height){contentHeight=height;ScrollTo(offset);PerformLayout();}
     internal void ScrollTo(int value){int next=Math.Clamp(value,0,MaximumOffset);if(next==offset)return;offset=next;PerformLayout();Invalidate();Scrolled?.Invoke();}
     protected override void OnMouseWheel(MouseEventArgs e){if(e is HandledMouseEventArgs handled)handled.Handled=true;ScrollTo(offset-e.Delta/120*120);}
+    protected override void Dispose(bool disposing){if(disposing)motion.Dispose();base.Dispose(disposing);}
 }
 
 internal sealed class OverflowFade(IconGrid source,Action advance):Control

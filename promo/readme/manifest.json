@@ -1,0 +1,21 @@
+{
+  "canvasWidths": 1600,
+  "images": [
+    "hero.png",
+    "features.png",
+    "placement.png"
+  ],
+  "layers": [
+    "background",
+    "product",
+    "brand/cards",
+    "typography"
+  ],
+  "background": "Built-in imagegen, prompt in CREDITS.md",
+  "product": "Current production TrayPanel, public demo fixtures, no user desktop",
+  "fonts": [
+    "Microsoft YaHei UI",
+    "Segoe UI"
+  ],
+  "renderer": "@resvg/resvg-js 2.6.2"
+}

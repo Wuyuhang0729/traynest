@@ -249,13 +249,17 @@ internal static class ProductSelfTest
             checks["NativeDragOutRestoresFixture"]=!record.Selected&&!Settings.Load().Collected.Contains(rule);
             checks["OutDragDiagnostic"]=app.Panel.LastDragState;
             app.Bridge.Collect(record);Pump(100);
+            var retainedBounds=app.Panel.CellBounds(record);
             NativeTray.PostMessage(record.Window,0x10,0,0);Wait(()=>first.HasExited);
             Wait(()=>!app.Bridge.Icons.Values.Any(value=>value.ProcessId==first.Id));
             checks["ClosedApplicationRemovedFromPanel"]=true;
+            var retainedTile=app.Panel.Controls.OfType<FlowLayoutPanel>().Single().Controls.OfType<Button>().SingleOrDefault(button=>button.Tag is IconRecord saved&&saved.Rule==rule);
+            checks["ClosedToolRetainsDimmedSlot"]=retainedTile?.Tag is IconRecord absent&&absent.IsOffline&&app.Panel.CellBounds(absent)==retainedBounds;
             string secondFolder=Path.Combine(folder,"second");
             second=Start(fixtureExe,secondFolder,guid,legacyIdentity);app.Bridge.AllowedOwners.Add(second.Id);
             Wait(()=>app.Bridge.Icons.Values.Any(value=>value.ProcessId==second.Id&&value.Selected&&value.Version==expectedVersion));
             record=app.Bridge.Icons.Values.Single(value=>value.ProcessId==second.Id);
+            checks["RestartedToolUsesOriginalSlotAndNewOwner"]=app.Panel.CellBounds(record)==retainedBounds&&ReferenceEquals(retainedTile?.Tag,record);
             checks["RestartedApplicationAutomaticallyCollected"]=record.Selected&&record.Rule==rule;
             OpenOverflow(app.Bridge.ExplorerWindow);
             checks["RestartedOriginalIconHidden"]=FindIcon(app.Bridge.ExplorerWindow,"NestedTray product fixture")==null;

@@ -1,0 +1,37 @@
+{
+  "sourceSkill": "https://github.com/op7418/logo-generator-skill",
+  "selected": "nested",
+  "sizes": [
+    16,
+    20,
+    24,
+    32,
+    40,
+    48,
+    64,
+    96,
+    128,
+    256,
+    512,
+    1024
+  ],
+  "icoFrames": [
+    16,
+    20,
+    24,
+    32,
+    40,
+    48,
+    64,
+    96,
+    128,
+    256
+  ],
+  "palette": {
+    "blue": "#2563eb",
+    "accent": "#a5e6ff",
+    "white": "#ffffff"
+  },
+  "renderer": "@resvg/resvg-js",
+  "usage": "ApplicationIcon + embedded tray/window icon + desktop shortcut"
+}

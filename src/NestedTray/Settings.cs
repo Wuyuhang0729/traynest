@@ -6,6 +6,10 @@ namespace NestedTray;
 internal sealed class Settings
 {
     public List<string> Collected {get;set;}=new();
+    public List<SavedTool> Tools {get;set;}=new();
+    public int Columns {get;set;}=5;
+    public PopupPlacement Placement {get;set;}=PopupPlacement.Left;
+    internal Action? BeforeSave;
     internal static string DirectoryPath=>Environment.GetEnvironmentVariable("NESTEDTRAY_TEST_PROFILE")??Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"NestedTray");
     internal static string FilePath=>Path.Combine(DirectoryPath,"settings.json");
     internal static Settings Load()
@@ -15,7 +19,11 @@ internal sealed class Settings
         {
             var value=JsonSerializer.Deserialize<Settings>(File.ReadAllText(FilePath));
             if(value?.Collected==null||value.Collected.Any(rule=>string.IsNullOrWhiteSpace(rule)))throw new JsonException("Invalid collected rules.");
-            value.Collected=value.Collected.Distinct(StringComparer.Ordinal).ToList();return value;
+            if(value.Tools==null||value.Tools.Any(tool=>tool==null||string.IsNullOrWhiteSpace(tool.Rule)||tool.IconPng==null||tool.Name==null||tool.Executable==null||tool.LaunchTarget==null||tool.IconPng.Length>65536))throw new JsonException("Invalid saved tools.");
+            value.Columns=Math.Clamp(value.Columns,5,8);
+            if(!Enum.IsDefined(value.Placement))value.Placement=PopupPlacement.Left;
+            value.Collected=value.Collected.Distinct(StringComparer.Ordinal).ToList();
+            value.Tools=value.Tools.Where(tool=>value.Collected.Contains(tool.Rule)).DistinctBy(tool=>tool.Rule).ToList();return value;
         }
         catch(Exception e) when(e is IOException or JsonException or UnauthorizedAccessException) {throw new TrayNestException("TN1002",e);}
     }
@@ -23,6 +31,7 @@ internal sealed class Settings
     {
         try
         {
+            BeforeSave?.Invoke();
             Directory.CreateDirectory(DirectoryPath);
             File.WriteAllText(FilePath+".tmp",JsonSerializer.Serialize(this,new JsonSerializerOptions{WriteIndented=true}));
             if(File.Exists(FilePath))File.Copy(FilePath,FilePath+".bak",true);
@@ -30,14 +39,15 @@ internal sealed class Settings
         }
         catch(Exception error)when(error is IOException or UnauthorizedAccessException){throw new TrayNestException("TN4001",error);}
     }
+    internal void ChangePlacement(PopupPlacement value)
+    {
+        var previous=Placement;Placement=value;
+        try{Save();}catch{Placement=previous;throw;}
+    }
     internal static bool StartupEnabled
     {
-        get {using var key=Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");return string.Equals(key?.GetValue("NestedTray")as string,"\""+Environment.ProcessPath+"\"",StringComparison.OrdinalIgnoreCase);}
-        set
-        {
-            try{using var key=Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");if(value)key.SetValue("NestedTray","\""+Environment.ProcessPath+"\"");else key.DeleteValue("NestedTray",false);}
-            catch(Exception error)when(error is UnauthorizedAccessException or System.Security.SecurityException or IOException){throw new TrayNestException("TN4001",error);}
-        }
+        get=>StartupRegistration.Enabled;
+        set=>StartupRegistration.Enabled=value;
     }
 }
 
@@ -46,6 +56,7 @@ internal sealed class RecoveryJournal
 {
     internal readonly string PathName=Path.Combine(Settings.DirectoryPath,"recovery-"+Environment.ProcessId+".json");
     private Process? watcher;
+    internal Action? BeforeWrite;
     internal void Start()
     {
         Directory.CreateDirectory(Settings.DirectoryPath);
@@ -55,7 +66,7 @@ internal sealed class RecoveryJournal
     }
     internal void Write(IEnumerable<RecoveryItem> items)
     {
-        try{File.WriteAllText(PathName+".tmp",JsonSerializer.Serialize(items));File.Move(PathName+".tmp",PathName,true);}
+        try{BeforeWrite?.Invoke();File.WriteAllText(PathName+".tmp",JsonSerializer.Serialize(items));File.Move(PathName+".tmp",PathName,true);}
         catch(Exception error)when(error is IOException or UnauthorizedAccessException){throw new TrayNestException("TN6002",error);}
     }
     internal void Complete() {File.Delete(PathName);watcher?.Dispose();}

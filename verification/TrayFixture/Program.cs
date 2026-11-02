@@ -42,6 +42,7 @@ internal sealed class FixtureWindow : NativeWindow, IDisposable
         var command = menu.Items.Add("NestedTray fixture command");
         command.Click += (_, _) => File.AppendAllText(Path.Combine(directory, "commands.log"), "CommandSelected\n");
         Directory.CreateDirectory(directory);
+        menu.Closed+=(_,e)=>File.AppendAllText(Path.Combine(directory,"menu-closed.jsonl"),JsonSerializer.Serialize(new{Reason=e.CloseReason.ToString(),Tick=Environment.TickCount64})+"\n");
         CreateHandle(new CreateParams { Caption = "NestedTray verification fixture", Parent = new nint(-3) });
         var icon = MakeData();
         icon.Flags = 1 | 2 | 4 | (legacyIdentity?0u:0x20u);
