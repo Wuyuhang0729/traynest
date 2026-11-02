@@ -4,7 +4,7 @@
     <UseWindowsForms>true</UseWindowsForms><UseWPF>true</UseWPF><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
     <PlatformTarget>x64</PlatformTarget><ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>NestedTray</AssemblyName><RootNamespace>NestedTray</RootNamespace>
-    <Version>0.2.0-preview.8</Version><AssemblyTitle>TrayNest</AssemblyTitle>
+    <Version>0.2.0-preview.9</Version><AssemblyTitle>TrayNest</AssemblyTitle>
     <ApplicationIcon>Resources/TrayNest.ico</ApplicationIcon>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>

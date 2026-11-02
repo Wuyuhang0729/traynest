@@ -418,13 +418,19 @@ internal sealed class TrayApplication:ApplicationContext
     }
     private bool HandleOwnMenuPress(Point point,bool right,long observedAt=0)
     {
-        if(offlineMenu.Visible){if(observedAt>0&&observedAt<=menuOpenedAt||offlineMenu.Bounds.Contains(point))return true;offlineMenu.Close(ToolStripDropDownCloseReason.AppClicked);}
+        if(offlineMenu.Visible){if(observedAt>0&&observedAt<=menuOpenedAt||ContainsMenuPoint(offlineMenu,point))return true;offlineMenu.Close(ToolStripDropDownCloseReason.AppClicked);}
         if(!menu.Visible)return false;
         if(observedAt>0&&observedAt<=menuOpenedAt)return true;
-        if(menu.Bounds.Contains(point))return true;
+        if(ContainsMenuPoint(menu,point))return true;
         if(right&&menuEntryAnchor.Contains(point))suppressMenuUntil=Environment.TickCount64+500;
         AppDiagnostics.Info("TN0101",new(){["Operation"]="OutsideMenuPress",["Button"]=right?"Right":"Left"});
         menu.Close(ToolStripDropDownCloseReason.AppClicked);return false;
+    }
+    private static bool ContainsMenuPoint(ToolStripDropDown root,Point point)
+    {
+        if(!root.Visible)return false;
+        if(root.Bounds.Contains(point))return true;
+        return root.Items.OfType<ToolStripDropDownItem>().Any(item=>item.HasDropDownItems&&ContainsMenuPoint(item.DropDown,point));
     }
     private void ShowMenu()
     {
