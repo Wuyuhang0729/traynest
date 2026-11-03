@@ -8,7 +8,7 @@
 pwsh -File scripts/Build-Release.ps1
 ```
 
-首次构建需要访问 NuGet 官方源下载运行时包。脚本在 `artifacts/` 生成自带运行时的 Windows x64 ZIP、校验文件和本次独立构建目录，并保留运行时许可证。
+首次构建需要访问 NuGet 官方源下载运行时包。脚本在 `artifacts/` 生成自带运行时的 Windows x64 ZIP、校验文件和本次独立构建目录，并保留运行时许可证。ZIP同时包含双击安装入口 `Install.cmd`、安装脚本与桌面快捷方式脚本。
 
 也可以直接构建：
 
@@ -53,7 +53,11 @@ artifacts/publish/NestedTray.exe --self-test-placement artifacts/qa/placement
 
 完整矢量源、16–1024像素PNG、单色版和六方案展示在 `assets/branding/`。需要重新生成时，执行 `npm install --prefix .tools/logo-render @resvg/resvg-js@2.6.2`，再运行 `node scripts/Build-Icons.cjs`。ICO包含16、20、24、32、40、48、64、96、128、256像素的32位透明帧。
 
-发布脚本会附带 `TrayNest.ico` 和 `Create-DesktopShortcut.ps1`。在解压目录运行后者，可创建显式引用同目录ICO的桌面快捷方式；直接在源码目录调用时使用 `scripts/Create-DesktopShortcut.ps1 -InstallDirectory <程序目录>`。这样桌面图标不会依赖默认程序图标。
+完整包解压后双击 `Install.cmd`，使用系统自带的 Windows PowerShell 安装到当前用户的 `%LOCALAPPDATA%\Programs\TrayNest`，自动创建桌面快捷方式并启动。无需管理员权限，不自动启用开机启动。安装脚本先完整复制并校验核心文件，再切换目录；创建快捷方式失败时恢复原安装与原快捷方式。更新前须正常退出目标安装目录中正在运行的 TrayNest。用户设置保存在独立的 `%LOCALAPPDATA%\NestedTray`，安装不覆盖该目录。
+
+发布脚本会附带 `TrayNest.ico` 和 `Create-DesktopShortcut.ps1`。便携使用时，在解压目录运行后者也能创建显式引用同目录ICO的桌面快捷方式；直接在源码目录调用时使用 `scripts/Create-DesktopShortcut.ps1 -InstallDirectory <程序目录>`。快捷方式会清空旧参数，并在保存后核对目标、工作目录与图标。
+
+隔离验证可调用 `Install-TrayNest.ps1 -SourceDirectory <完整包> -InstallDirectory <测试安装目录> -DesktopDirectory <测试桌面目录> -NoLaunch`，避免覆盖真实桌面或接管正在使用的托盘。不要将测试目录指定为真实安装目录。
 
 ```powershell
 pwsh -File scripts/Test-Release.ps1 -CandidateDirectory artifacts/publish -FixtureExe artifacts/fixture/TrayFixture.exe

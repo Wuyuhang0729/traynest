@@ -1,17 +1,25 @@
 {
-  "canvasWidths": 1600,
+  "landscapeWidth": 1600,
+  "portraitSize": [
+    1080,
+    1820
+  ],
   "images": [
     "hero.png",
     "hierarchy.png",
     "features.png",
-    "placement.png"
+    "placement.png",
+    "case-developer.png",
+    "case-hr.png",
+    "case-gamer.png"
   ],
   "layers": [
     "background",
-    "product",
+    "product/interface",
     "brand/cards",
-    "typography"
+    "typography/labels"
   ],
+  "personas": "review/personas/render-portrait.cjs",
   "background": "Built-in imagegen, prompt in CREDITS.md",
   "product": "Current production TrayPanel, public demo fixtures, no user desktop",
   "fonts": [

@@ -1,0 +1,44 @@
+[
+  {
+    "id": "developer",
+    "role": "程序员",
+    "title": "开发工具收在一起，消息留在外面。",
+    "description": "按开发场景选择收纳内容，外层也保留明确的同步、安全和远程连接入口。",
+    "importantLabel": "工作消息与会议",
+    "important": ["qq", "wechat", "tencent-meeting"],
+    "outerLabel": "同步、安全与远程",
+    "outer": ["baidupan", "onedrive", "keepassxc", "huorong", "rustdesk"],
+    "personalLabel": "开发与排障",
+    "personal": ["docker", "powertoys", "sharex", "everything", "tailscale"],
+    "personalLines": ["Docker · PowerToys · ShareX", "Everything · Tailscale"],
+    "importantNames": "QQ · 微信 · 腾讯会议"
+  },
+  {
+    "id": "hr",
+    "role": "人事部门职员",
+    "title": "沟通留在眼前，资料工具收在一起。",
+    "description": "招聘沟通保持靠外，文件、截图和不常点的输入法设置归到个人收纳里。",
+    "importantLabel": "候选人与内部沟通",
+    "important": ["wechat", "wecom"],
+    "outerLabel": "其他沟通与安全",
+    "outer": ["qq", "tencent-meeting", "huorong"],
+    "personalLabel": "资料、截图与输入",
+    "personal": ["baidupan", "snipaste", "sogou"],
+    "personalLines": ["百度网盘 · Snipaste · 搜狗输入法设置"],
+    "importantNames": "微信 · 企业微信"
+  },
+  {
+    "id": "gamer",
+    "role": "游戏影音用户",
+    "title": "影音和语音，也可以单独收成一组。",
+    "description": "聊天和游戏平台留在眼前；文件与安全留在外层；影音和语音放进自选面板。",
+    "importantLabel": "聊天与游戏",
+    "important": ["qq", "wechat", "steam"],
+    "outerLabel": "下载、文件与安全",
+    "outer": ["baidupan", "onedrive", "everything", "huorong", "xunlei"],
+    "personalLabel": "影音与语音",
+    "personal": ["netease-music", "qqmusic", "vlc", "obs", "discord"],
+    "personalLines": ["网易云音乐 · QQ音乐 · VLC", "OBS · Discord"],
+    "importantNames": "QQ · 微信 · Steam"
+  }
+]

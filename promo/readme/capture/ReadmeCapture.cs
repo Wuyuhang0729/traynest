@@ -8,7 +8,7 @@ internal static class ReadmeCapture
         string root=Path.GetFullPath(args[0]),source=Path.GetFullPath(args[1]);Directory.CreateDirectory(root);
         Environment.SetEnvironmentVariable("NESTEDTRAY_TEST_PROFILE",Path.Combine(root,"profile"));
         Application.SetHighDpiMode(HighDpiMode.DpiUnaware);Application.EnableVisualStyles();
-        var ids=new[]{"qbittorrent","sharex","localsend","keepassxc","obs","bitwarden","syncthing","autohotkey","rustdesk","tailscale"};
+        var ids=args.Length>2?args[2].Split(','):new[]{"qbittorrent","sharex","localsend","keepassxc","obs","bitwarden","syncthing","autohotkey","rustdesk","tailscale"};
         var records=ids.Select(id=>new IconRecord{Key=id,Rule="demo|"+id,Tooltip=id,Selected=true,RegistrationKnown=true,Image=new Bitmap(Path.Combine(source,id+"-normal.png"))}).ToArray();
         try
         {
@@ -20,7 +20,7 @@ internal static class ReadmeCapture
             var flags=BindingFlags.Instance|BindingFlags.NonPublic;
             tile.GetType().GetMethod("OnMouseEnter",flags)!.Invoke(tile,[EventArgs.Empty]);Save("hover");
             tile.GetType().GetField("Reordering",flags)!.SetValue(tile,true);Save("reorder");tile.GetType().GetField("Reordering",flags)!.SetValue(tile,false);
-            records[2].IsOffline=true;records[3].IsOffline=true;Save("offline");
+            foreach(var record in records.Skip(2).Take(2))record.IsOffline=true;Save("offline");
             panel.ToolStatus=_=>new ToolLaunchStatus(ToolLaunchState.Waiting,"正在启动，等待图标回到原位。");Save("waiting");
             File.WriteAllText(Path.Combine(root,"provenance.txt"),"Current production TrayPanel compiled from src/NestedTray; 4x logical size (16px icon / 40px cell), 5 columns, public icon fixtures from existing video source manifest. No user desktop, settings, application titles or real tray takeover. Reorder highlight and offline/waiting statuses are demonstration states.");
         }
