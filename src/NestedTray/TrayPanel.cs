@@ -8,6 +8,7 @@ internal sealed partial class TrayPanel:Form
         private bool hovered,pressed;
         internal Action? DoubleAction;
         internal bool Dimmed;
+        internal bool LightSurface,GlassSurface;
         internal string StatusMark="";
         internal bool SuppressClick,Reordering,Placed;
         internal Action<MouseEventArgs>? PointerReleased;
@@ -18,7 +19,7 @@ internal sealed partial class TrayPanel:Form
         protected override void OnMouseCaptureChanged(EventArgs e){pressed=false;Invalidate();base.OnMouseCaptureChanged(e);}
         protected override void OnPaint(PaintEventArgs e)
         {
-            e.Graphics.Clear(BackColor);
+            if(GlassSurface)PanelTheme.PaintGlass(e.Graphics,ClientRectangle);else e.Graphics.Clear(BackColor);
             if(hovered||Reordering||Placed)
             {
                 float diameter=Math.Max(2,Height/5f),right=Width-1,bottom=Height-1;
@@ -26,7 +27,7 @@ internal sealed partial class TrayPanel:Form
                 shape.AddArc(0,0,diameter,diameter,180,90);shape.AddArc(right-diameter,0,diameter,diameter,270,90);
                 shape.AddArc(right-diameter,bottom-diameter,diameter,diameter,0,90);shape.AddArc(0,bottom-diameter,diameter,diameter,90,90);shape.CloseFigure();
                 e.Graphics.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                using var fill=new SolidBrush(Reordering?Color.FromArgb(43,66,86):Placed?Color.FromArgb(36,60,50):pressed?Color.FromArgb(46,49,56):Color.FromArgb(54,57,64));e.Graphics.FillPath(fill,shape);
+                using var fill=new SolidBrush(LightSurface?(Reordering?Color.FromArgb(209,230,249):Placed?Color.FromArgb(213,240,225):pressed?Color.FromArgb(213,218,224):Color.FromArgb(232,235,239)):(Reordering?Color.FromArgb(43,66,86):Placed?Color.FromArgb(36,60,50):pressed?Color.FromArgb(46,49,56):Color.FromArgb(54,57,64)));e.Graphics.FillPath(fill,shape);
                 if(Reordering||Placed){using var border=new Pen(Reordering?Color.FromArgb(112,190,255):Color.FromArgb(105,200,150));e.Graphics.DrawPath(border,shape);}
             }
             if(Image!=null)
@@ -38,8 +39,8 @@ internal sealed partial class TrayPanel:Form
             if(StatusMark.Length>0)
             {
                 var badge=new Rectangle(Width-15,Height-15,14,14);
-                using var brush=new SolidBrush(Color.FromArgb(32,34,40));e.Graphics.FillEllipse(brush,badge);
-                TextRenderer.DrawText(e.Graphics,StatusMark,Font,badge,Color.White,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter|TextFormatFlags.NoPadding);
+                using var brush=new SolidBrush(LightSurface?Color.White:Color.FromArgb(32,34,40));e.Graphics.FillEllipse(brush,badge);
+                TextRenderer.DrawText(e.Graphics,StatusMark,Font,badge,ForeColor,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter|TextFormatFlags.NoPadding);
             }
         }
         protected override void WndProc(ref Message message)
@@ -55,7 +56,7 @@ internal sealed partial class TrayPanel:Form
     internal bool HasOverflowFade=>fade.Visible;
     internal void ScrollToLastIcon()=>grid.ScrollTo(int.MaxValue);
     private const string EmptyInstructions="展开系统托盘的隐藏图标区\n将图标拖到这里收纳";
-    private readonly Label empty=new(){Text=EmptyInstructions,AutoSize=false,TextAlign=ContentAlignment.MiddleCenter,ForeColor=Color.Silver};
+    private readonly SurfaceLabel empty=new(){Text=EmptyInstructions,AutoSize=false,TextAlign=ContentAlignment.MiddleCenter,ForeColor=Color.Silver,UseCompatibleTextRendering=true};
     private readonly Dictionary<string,Button> tiles=new();
     private readonly ToolTip tips=new();
     internal Action<IconRecord,uint,Rectangle>? IconInput;
@@ -66,6 +67,8 @@ internal sealed partial class TrayPanel:Form
     internal bool UseSavedOrder;
     internal int FixedColumns;
     internal PopupPlacement Placement=PopupPlacement.Left;
+    internal nint TaskbarWindow;
+    private nint layerTaskbar;
     internal void SetPlacement(PopupPlacement value)
     {
         if(Placement==value)return;Placement=value;
@@ -75,6 +78,8 @@ internal sealed partial class TrayPanel:Form
     internal Action? OpenMenu;
     internal Action? PanelInteraction;
     internal Func<bool>? CanAcceptNativeDrag;
+    internal Func<bool>? NativeDragActive;
+    private bool CanQueryExplorerAutomation=>!DragPreview&&!(NativeDragActive?.Invoke()??false)&&(Native.GetAsyncKeyState(1)&0x8000)==0;
     internal Action<Point>? NativeDropReceived;
     internal int ExternalDragEnters,ExternalDragOvers,ExternalDrops;
     internal string[] LastExternalFormats=[];
@@ -108,6 +113,7 @@ internal sealed partial class TrayPanel:Form
     {
         if(message.Msg==0x21){message.Result=3;return;} // MA_NOACTIVATE: preserve the native tray's focus.
         base.WndProc(ref message);
+        if(message.Msg is 0x1A or 0x31A or 0x320)ApplyAppearance(true);
     }
     internal TrayPanel()
     {
@@ -129,6 +135,7 @@ internal sealed partial class TrayPanel:Form
         CoreDrop=new CoreDragReceiver(this,()=>internalDrag!=null||CanAcceptNativeDrag?.Invoke()==true,point=>{if(internalDrag!=null)Reorder(TileKey(internalDrag),point);else NativeDropReceived?.Invoke(point);});
         if(!CoreDrop.Registered)foreach(Control target in new Control[]{this,grid,empty})RegisterDropTarget(target);
         int corners=2;Native.DwmSetWindowAttribute(Handle,33,ref corners,4);
+        ApplyAppearance();
     }
     internal void Render(IEnumerable<IconRecord> records)
     {
@@ -142,7 +149,7 @@ internal sealed partial class TrayPanel:Form
             string key=TileKey(record);
             if(!tiles.TryGetValue(key,out var tile))
             {
-                var iconTile=new IconTileButton{Size=new Size(CellPixels,CellPixels),Margin=Padding.Empty,FlatStyle=FlatStyle.Flat,BackColor=BackColor,ForeColor=Color.White,Tag=record};tile=iconTile;tile.FlatAppearance.BorderSize=0;
+                var iconTile=new IconTileButton{Size=new Size(CellPixels,CellPixels),Margin=Padding.Empty,FlatStyle=FlatStyle.Flat,BackColor=BackColor,ForeColor=ForeColor,LightSurface=LightSurface,GlassSurface=AcrylicActive,Tag=record};tile=iconTile;tile.FlatAppearance.BorderSize=0;
                 tile.MouseDown+=(_,e)=>{PanelInteraction?.Invoke();if(e.Button==MouseButtons.Left)BeginTilePress(iconTile,tile.PointToScreen(e.Location));};
                 tile.MouseMove+=(_,e)=>{if(e.Button==MouseButtons.Left)MoveTilePress(iconTile,tile.PointToScreen(e.Location));};
                 iconTile.PointerReleased=e=>{if(e.Button==MouseButtons.Left)FinishTilePress(iconTile,tile.PointToScreen(e.Location),false);};
@@ -181,7 +188,7 @@ internal sealed partial class TrayPanel:Form
     internal void SetNativeDragFeedback(bool enabled)
     {
         if(NativeDragFeedback==enabled)return;NativeDragFeedback=enabled;
-        BackColor=enabled?Color.FromArgb(32,58,78):Color.FromArgb(32,34,40);
+        UpdateAppearanceColors();
         empty.Text=enabled?"松开鼠标以收纳图标":EmptyInstructions;
         Invalidate();
     }
@@ -197,7 +204,7 @@ internal sealed partial class TrayPanel:Form
         if(incomingIcon?.Image==null||!NativeDragFeedback)return;
         int columns=Math.Max(1,grid.ClientSize.Width/CellPixels),index=tiles.Count;
         var bounds=new Rectangle(index%columns*CellPixels,index/columns*CellPixels-grid.ScrollOffset,CellPixels-1,CellPixels-1);
-        using var background=new SolidBrush(Color.FromArgb(32,58,78));graphics.FillRectangle(background,bounds);
+        using var background=new SolidBrush(LightSurface?Color.FromArgb(225,239,252):Color.FromArgb(32,58,78));graphics.FillRectangle(background,bounds);
         using var border=new Pen(Color.FromArgb(112,190,255)){DashStyle=System.Drawing.Drawing2D.DashStyle.Dash};graphics.DrawRectangle(border,bounds);
         graphics.DrawImage(incomingIcon.Image,bounds.Left+(CellPixels-IconPixels)/2,bounds.Top+(CellPixels-IconPixels)/2,IconPixels,IconPixels);
     }
@@ -244,7 +251,7 @@ internal sealed partial class TrayPanel:Form
         DragPreview=preview;
         nint overflow=Native.FindWindowW("TopLevelWindowForOverflowXamlIsland",null);
         uint dpi=overflow!=0?Native.GetDpiForWindow(overflow):(uint)DeviceDpi;
-        var layout=NativeTrayLayout.Measure(overflow,dpi,!preview);
+        var layout=NativeTrayLayout.Measure(overflow,dpi,!preview&&CanQueryExplorerAutomation);
         IconPixels=layout.Icon;CellPixels=layout.Cell;surfacePadding=layout.Padding;ApplyContentLayout();
         foreach(var tile in tiles.Values){tile.Size=new Size(CellPixels,CellPixels);if(tile.Tag is IconRecord record){var previous=tile.Image;tile.Image=record.Image==null?null:new Bitmap(record.Image,new Size(IconPixels,IconPixels));previous?.Dispose();}}
         PositionPanel();
@@ -287,7 +294,13 @@ internal sealed partial class TrayPanel:Form
         if(fade.Visible){fade.BringToFront();fade.Invalidate();}
     }
     internal void EnsureAboveApplications()
-    {if(Visible&&!IsDismissing)Native.SetWindowPos(Handle,new nint(-1),0,0,0,0,0x213);}
+    {
+        if(!Visible)return;
+        // Use Explorer's real handle, not FindWindow("Shell_TrayWnd"), which
+        // points at our notification receiver while the bridge is active.
+        nint after=Native.IsWindow(layerTaskbar)?layerTaskbar:Native.IsWindow(TaskbarWindow)?TaskbarWindow:new nint(-1);
+        Native.SetWindowPos(Handle,after,0,0,0,0,0x213);
+    }
     internal void Dismiss()
     {
         if(!Visible||IsDismissing)return;
@@ -297,6 +310,7 @@ internal sealed partial class TrayPanel:Form
         Point current=Location,home=IsOpening?dismissHome:Location;double opacity=Opacity;
         CancelDismiss();dismissHome=home;Location=current;Opacity=opacity;
         activeDismiss=options;IsDismissing=true;Enabled=false;
+        EnsureAboveApplications();
         animationStartOffset=current.Y-home.Y;animationEndOffset=options.DistanceDip*DeviceDpi/96.0;animationStartOpacity=opacity;
         dismissClock.Restart();dismissFrames.Start();
     }
@@ -308,6 +322,7 @@ internal sealed partial class TrayPanel:Form
         if(t>=1){if(IsDismissing)Hide();else CancelDismiss();return;}
         Location=new Point(dismissHome.X,dismissHome.Y+(int)Math.Round(animationStartOffset+(animationEndOffset-animationStartOffset)*p));
         if(activeDismiss.Fade)Opacity=Math.Clamp(animationStartOpacity+((IsOpening?1:0)-animationStartOpacity)*p,.01,1);
+        EnsureAboveApplications();
     }
     private void CancelDismiss()
     {
@@ -321,11 +336,14 @@ internal sealed partial class TrayPanel:Form
         nint overflow=Native.FindWindowW("TopLevelWindowForOverflowXamlIsland",null);
         var work=Screen.FromRectangle(EntryRectangle).WorkingArea;
         var anchor=EntryRectangle;
-        if(overflow!=0&&Native.IsWindowVisible(overflow)&&Native.GetWindowRect(overflow,out var nativeBounds))
+        if(overflow!=0&&Native.IsWindowVisible(overflow))
         {
-            var source=Native.Rect(nativeBounds);
+            // Explorer may be waiting on our drag target; querying its UIA
+            // provider synchronously from here can create a circular wait.
+            var source=NativeOverflow.SurfaceBounds(overflow,surfacePadding,CanQueryExplorerAutomation);
             if(source.IntersectsWith(EntryRectangle))anchor=source;
         }
+        layerTaskbar=NativeOverflow.TaskbarForBounds(EntryRectangle,TaskbarWindow);
         Location=PopupPosition.Calculate(anchor,Size,work,Placement);
     }
     private void BackgroundMenu(object? sender,MouseEventArgs e){if(e.Button==MouseButtons.Right)OpenMenu?.Invoke();}

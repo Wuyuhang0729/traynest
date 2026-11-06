@@ -8,6 +8,8 @@ if(!$OutputDirectory){$OutputDirectory=Join-Path $workspace 'artifacts\qa'}
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 $results=[Collections.Generic.List[object]]::new()
 $cases=@(
+ @{Name='appearance';Mode='--self-test-appearance';Report='appearance-test.json';Fixture=$false},
+ @{Name='entry-hover';Mode='--self-test-entry-hover';Report='entry-hover-test.json';Fixture=$true},
  @{Name='placement';Mode='--self-test-placement';Report='placement-test.json';Fixture=$false},
  @{Name='experience';Mode='--self-test-experience';Report='experience-test.json';Fixture=$false},
  @{Name='fixed-tools';Mode='--self-test-fixed-tools';Report='fixed-tools-test.json';Fixture=$false},

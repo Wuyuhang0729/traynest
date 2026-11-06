@@ -6,6 +6,10 @@ internal static class Program
 {
     [STAThread]private static int Main(string[] args)
     {
+        if(args.Length is 2 or 3&&args[0]=="--self-test-appearance")
+        {Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);return AppearanceRegression.Run(args[1],args.Length==3&&args[2]=="--capture");}
+        if(args.Length==3&&args[0]=="--self-test-entry-hover")
+        {Environment.SetEnvironmentVariable("NESTEDTRAY_TEST_PROFILE",Path.GetFullPath(args[1]));Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);return EntryHoverRegression.Run(args[2]);}
         if(args.Length==2&&args[0]=="--self-test-placement")
         {Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);return PopupPlacementRegression.Run(args[1]);}
         if(args.Length==2&&args[0]=="--self-test-experience")
@@ -157,6 +161,7 @@ internal sealed class TrayApplication:ApplicationContext
                 Guard(()=>bridge?.ForwardInput(record,code,rect));
             };
             panel.CanAcceptNativeDrag=()=>!cancelledDrag&&(candidate??releasedCandidate)is {CanCollect:true,Selected:false};
+            panel.NativeDragActive=()=>candidate!=null||releasedCandidate!=null;
             panel.NativeDropReceived=point=>
             {
                 releasedCandidate??=candidate;
@@ -167,7 +172,7 @@ internal sealed class TrayApplication:ApplicationContext
             panel.RemoveIcon=record=>Guard(()=>{if(record.IsOffline){library.Forget(record.Rule);RefreshPanel();}else bridge.Restore(record);});panel.OpenMenu=ShowMenu;
             panel.DismissStarted=()=>{pairedWithOverflow=false;restoreOverflowUntil=0;contextIcon=null;};
             panel.VisibleChanged+=(_,_)=>{pairedWithOverflow=false;ignoreNativeCloseForPanelInteraction=false;panelOpenedUntil=Environment.TickCount64+700;if(!panel.Visible){restoreOverflowUntil=0;contextIcon=null;}};
-            BuildMenu();bridge.Start();chevronBounds=NativeOverflow.ChevronBounds(bridge.ExplorerWindow);
+            BuildMenu();bridge.Start();panel.TaskbarWindow=bridge.ExplorerWindow;chevronBounds=NativeOverflow.ChevronBounds(bridge.ExplorerWindow);
             AppDiagnostics.State=DiagnosticState;
             if(!panel.CoreDrop.Registered)AppDiagnostics.Warn("TN1102");
             drag=new DragObserver(panel);
@@ -181,7 +186,7 @@ internal sealed class TrayApplication:ApplicationContext
                     startupCheckpoints++;
                     AppDiagnostics.Info("TN0012",new(){["Checkpoint"]=startupCheckpoints.ToString(),["SavedTools"]=settings.Tools.Count.ToString(),["CollectedIcons"]=bridge!.Icons.Values.Count(icon=>icon.Selected).ToString(),["KnownIcons"]=bridge.Icons.Count.ToString()});
                 }
-                if(++ticks%7==0){UpdateEntryBounds();CacheNativeIconBounds();}if(ticks%33==0){bridge?.PruneClosed();chevronBounds=NativeOverflow.ChevronBounds(bridge!.ExplorerWindow);}
+                if(++ticks%7==0){UpdateEntryBounds();CacheNativeIconBounds();}if(ticks%33==0){bridge?.PruneClosed();if(candidate==null&&releasedCandidate==null&&(Native.GetAsyncKeyState(1)&0x8000)==0)chevronBounds=NativeOverflow.ChevronBounds(bridge!.ExplorerWindow);}
                 if(ticks%33==0&&panel.Visible)panel.RefreshToolStates();
                 if((candidate!=null||releasedCandidate!=null)&&(Native.GetAsyncKeyState((int)Keys.Escape)&0x8000)!=0){cancelledDrag=true;candidate=null;releasedCandidate=null;finishDrag.Stop();panel.DragPreview=false;panel.SetIncomingIcon(null);}
                 bool escape=(Native.GetAsyncKeyState((int)Keys.Escape)&0x8000)!=0;
@@ -361,7 +366,7 @@ internal sealed class TrayApplication:ApplicationContext
         var records=bridge?.Icons.Values.ToArray()??[];
         if(library.EnsureEntries(records))settings.Save();
         var ordered=library.Snapshot(records);foreach(var record in ordered.Where(record=>!record.IsOffline))launcher.Registered(record.Rule);
-        panel.SetPlacement(settings.Placement);panel.FixedColumns=settings.Columns;panel.Render(ordered);
+        panel.SetAppearance(settings.Appearance);panel.SetPlacement(settings.Placement);panel.FixedColumns=settings.Columns;panel.Render(ordered);
     }
     private void LaunchTool(IconRecord record)
     {
@@ -396,6 +401,7 @@ internal sealed class TrayApplication:ApplicationContext
         var columns=new ToolStripMenuItem("每行图标数");
         foreach(int count in new[]{5,6,7,8}){var item=new ToolStripMenuItem(count.ToString()){Checked=settings.Columns==count};item.Click+=(_,_)=>Guard(()=>{int previous=settings.Columns;settings.Columns=count;try{settings.Save();}catch{settings.Columns=previous;throw;}foreach(ToolStripMenuItem sibling in columns.DropDownItems)sibling.Checked=sibling==item;RefreshPanel();});columns.DropDownItems.Add(item);}menu.Items.Add(columns);
         menu.Items.Add(CreatePlacementMenu(settings,panel.SetPlacement,Guard));
+        menu.Items.Add(CreateAppearanceMenu(settings,panel.SetAppearance,Guard));
         menu.Items.Add("移回全部并清空收纳…",null,(_,_)=>
         {
             menu.Close(ToolStripDropDownCloseReason.ItemClicked);
@@ -415,6 +421,17 @@ internal sealed class TrayApplication:ApplicationContext
             placement.DropDownItems.Add(item);
         }
         return placement;
+    }
+    internal static ToolStripMenuItem CreateAppearanceMenu(Settings settings,Action<PanelAppearance> apply,Action<Action> guard)
+    {
+        var menu=new ToolStripMenuItem("面板外观");
+        foreach(var option in new[]{(PanelAppearance.Acrylic,"亚克力"),(PanelAppearance.Light,"浅色"),(PanelAppearance.Dark,"深色"),(PanelAppearance.FollowSystem,"跟随系统托盘")})
+        {
+            var item=new ToolStripMenuItem(option.Item2){Checked=settings.Appearance==option.Item1};
+            item.Click+=(_,_)=>guard(()=>{settings.ChangeAppearance(option.Item1);apply(option.Item1);foreach(ToolStripMenuItem sibling in menu.DropDownItems)sibling.Checked=sibling==item;});
+            menu.DropDownItems.Add(item);
+        }
+        return menu;
     }
     private bool HandleOwnMenuPress(Point point,bool right,long observedAt=0)
     {

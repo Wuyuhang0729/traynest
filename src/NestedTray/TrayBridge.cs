@@ -65,7 +65,11 @@ internal sealed class TrayBridge:IDisposable
             record.RehideAfter=now+1000;
             Native.GetWindowThreadProcessId(record.Window,out uint owner);
             if(!Native.IsWindow(record.Window)||owner!=record.ProcessId)continue;
-            try {SetState(record,1);HiddenStateReapplications++;}
+            try
+            {
+                if(!forwarding.ReapplyHiddenState(()=>SetState(record,1)))return;
+                HiddenStateReapplications++;
+            }
             catch(InvalidOperationException error){Fail("TN2002",error);return;}
         }
     }

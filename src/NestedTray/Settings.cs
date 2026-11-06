@@ -9,6 +9,7 @@ internal sealed class Settings
     public List<SavedTool> Tools {get;set;}=new();
     public int Columns {get;set;}=5;
     public PopupPlacement Placement {get;set;}=PopupPlacement.Left;
+    public PanelAppearance Appearance {get;set;}=PanelAppearance.FollowSystem;
     internal Action? BeforeSave;
     internal static string DirectoryPath=>Environment.GetEnvironmentVariable("NESTEDTRAY_TEST_PROFILE")??Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"NestedTray");
     internal static string FilePath=>Path.Combine(DirectoryPath,"settings.json");
@@ -22,6 +23,7 @@ internal sealed class Settings
             if(value.Tools==null||value.Tools.Any(tool=>tool==null||string.IsNullOrWhiteSpace(tool.Rule)||tool.IconPng==null||tool.Name==null||tool.Executable==null||tool.LaunchTarget==null||tool.IconPng.Length>65536))throw new JsonException("Invalid saved tools.");
             value.Columns=Math.Clamp(value.Columns,5,8);
             if(!Enum.IsDefined(value.Placement))value.Placement=PopupPlacement.Left;
+            if(!Enum.IsDefined(value.Appearance))value.Appearance=PanelAppearance.FollowSystem;
             value.Collected=value.Collected.Distinct(StringComparer.Ordinal).ToList();
             value.Tools=value.Tools.Where(tool=>value.Collected.Contains(tool.Rule)).DistinctBy(tool=>tool.Rule).ToList();return value;
         }
@@ -43,6 +45,11 @@ internal sealed class Settings
     {
         var previous=Placement;Placement=value;
         try{Save();}catch{Placement=previous;throw;}
+    }
+    internal void ChangeAppearance(PanelAppearance value)
+    {
+        var previous=Appearance;Appearance=value;
+        try{Save();}catch{Appearance=previous;throw;}
     }
     internal static bool StartupEnabled
     {

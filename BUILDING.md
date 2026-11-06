@@ -37,9 +37,14 @@ artifacts/publish/NestedTray.exe --self-test-startup artifacts/qa/startup
 artifacts/publish/NestedTray.exe --self-test-experience artifacts/qa/experience
 artifacts/publish/NestedTray.exe --self-test-fixed-tools artifacts/qa/fixed-tools
 artifacts/publish/NestedTray.exe --self-test-placement artifacts/qa/placement
+artifacts/publish/NestedTray.exe --self-test-appearance artifacts/qa/appearance
 ```
 
 托盘连接检查使用自有隔离原生窗口，验证超时后保留程序、按间隔重试和响应恢复，不移动鼠标、不操作真实 Explorer。
+
+外观检查使用独立配置和测试面板，验证保存、切换、失败回滚与配色。增加 `--capture` 参数可在自有色块背景上截取四种外观；亚克力效果应结合实际截图确认。
+
+`--self-test-entry-hover <独立目录> <TrayFixture.exe>` 使用自有图标，分别从面板关闭和展开状态实际拖到入口，验证展开、布局响应及松手收纳。此项会短暂移动鼠标，开始前应退出正在使用的 TrayNest 并暂停输入；测试会恢复原光标，不写真实收纳配置。
 
 体验优化检查使用独立配置、实际恢复记录文件、注入的原生状态适配器和屏幕外面板，覆盖批量取消／部分失败、日志与配置故障、拖动越界取消、可控时钟启动状态及模拟DPI文案布局。不接管Explorer、不移动鼠标，也不代替真实拖放、第三方菜单或真实DPI验证。
 

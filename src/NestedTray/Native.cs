@@ -26,6 +26,7 @@ internal static class Native
     [DllImport("user32.dll")] internal static extern bool IsWindowVisible(nint hwnd);
     [DllImport("user32.dll")] internal static extern bool IsWindowEnabled(nint hwnd);
     [DllImport("user32.dll")] internal static extern nint GetWindowLongPtrW(nint hwnd,int index);
+    [DllImport("user32.dll")] internal static extern nint GetWindow(nint hwnd,uint command);
     [DllImport("user32.dll",SetLastError=true)] internal static extern bool GetWindowRect(nint hwnd,out NativeTray.Rect rect);
     [DllImport("user32.dll",CharSet=CharSet.Unicode,SetLastError=true)] internal static extern ushort RegisterClassW(ref WindowClass cls);
     [DllImport("user32.dll",CharSet=CharSet.Unicode,SetLastError=true)] internal static extern nint CreateWindowExW(uint extended,string cls,string title,uint style,int x,int y,int width,int height,nint parent,nint menu,nint instance,nint parameter);
@@ -57,6 +58,7 @@ internal static class Native
     [DllImport("kernel32.dll")] internal static extern uint GetCurrentThreadId();
     [DllImport("user32.dll")] internal static extern bool PostThreadMessageW(uint thread,uint message,nuint wp,nint lp);
     [DllImport("dwmapi.dll")] internal static extern int DwmSetWindowAttribute(nint window,uint attribute,ref int value,int size);
+    [DllImport("dwmapi.dll")] internal static extern int DwmGetWindowAttribute(nint window,uint attribute,out NativeTray.Rect value,int size);
     internal static Rectangle Rect(NativeTray.Rect value)=>Rectangle.FromLTRB(value.Left,value.Top,value.Right,value.Bottom);
     internal static Rectangle GetIconRect(nint hwnd,uint id,Guid guid)
     {

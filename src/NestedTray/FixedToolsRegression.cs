@@ -35,7 +35,8 @@ internal static class FixedToolsRegression
             using(var preview=new Bitmap(previewTile.Width,previewTile.Height))
             {
                 previewTile.DrawToBitmap(preview,new Rectangle(Point.Empty,preview.Size));
-                checks["ReorderTargetHighlightVisible"]=preview.GetPixel(8,8).ToArgb()==Color.FromArgb(43,66,86).ToArgb();
+                var highlight=panel.LightSurface?Color.FromArgb(209,230,249):Color.FromArgb(43,66,86);
+                checks["ReorderTargetHighlightVisible"]=preview.GetPixel(8,8).ToArgb()==highlight.ToArgb();
                 preview.Save(Path.Combine(directory,"reorder-target-tile.png"));
             }
             using(var preview=new Bitmap(panel.Width,panel.Height)){panel.DrawToBitmap(preview,new Rectangle(Point.Empty,preview.Size));preview.Save(Path.Combine(directory,"reorder-feedback-no-duplicate.png"));}

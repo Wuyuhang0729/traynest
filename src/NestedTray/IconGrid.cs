@@ -4,6 +4,9 @@ using System.Runtime.InteropServices;
 namespace NestedTray;
 internal sealed class IconGrid:FlowLayoutPanel
 {
+    internal bool GlassSurface;
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {if(GlassSurface)PanelTheme.PaintGlass(e.Graphics,ClientRectangle);else base.OnPaintBackground(e);}
     private sealed class GridEngine: System.Windows.Forms.Layout.LayoutEngine
     {
         public override bool Layout(object container,LayoutEventArgs args){((IconGrid)container).ArrangeIcons();return false;}
@@ -110,14 +113,14 @@ internal sealed class OverflowFade(IconGrid source,Action advance):Control
             for(int y=0;y<height;y++)for(int x=0;x<width;x++)
             {
                 double blend=y/(double)Math.Max(1,height-1),shade=blend*.4;int at=y*stride+x*4;
-                for(int channel=0;channel<3;channel++)original[at+channel]=(byte)((original[at+channel]*(1-blend)+blurred[at+channel]*blend)*(1-shade)+(channel==0?40:channel==1?34:32)*shade);
+                for(int channel=0;channel<3;channel++)original[at+channel]=(byte)((original[at+channel]*(1-blend)+blurred[at+channel]*blend)*(1-shade)+(channel==0?BackColor.B:channel==1?BackColor.G:BackColor.R)*shade);
                 original[at+3]=255;
             }
             Marshal.Copy(original,0,data.Scan0,original.Length);
         }
         finally{region.UnlockBits(data);}
         e.Graphics.DrawImageUnscaled(region,0,0);
-        using var pen=new Pen(Color.FromArgb(210,225,235),2);int cx=Width/2,cy=Height-12;
+        using var pen=new Pen(ForeColor,2);int cx=Width/2,cy=Height-12;
         e.Graphics.DrawLines(pen,[new Point(cx-5,cy-3),new Point(cx,cy+2),new Point(cx+5,cy-3)]);
     }
 }

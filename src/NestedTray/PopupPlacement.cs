@@ -7,7 +7,7 @@ internal static class PopupPosition
     internal static Point Calculate(Rectangle anchor,Size panel,Rectangle work,PopupPlacement placement,int gap=8)
     {
         var left=new Point(anchor.Left-panel.Width-gap,anchor.Bottom-panel.Height);
-        var above=new Point(anchor.Right-panel.Width,anchor.Top-panel.Height-gap);
+        var above=new Point(anchor.Left,anchor.Top-panel.Height-gap);
         var position=placement==PopupPlacement.Above?above:left;
         // Keep the chosen preference, but use the other side when it is the only
         // one with enough space. Both directions remain inside the working area.
