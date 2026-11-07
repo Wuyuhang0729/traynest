@@ -78,6 +78,16 @@
       "material-detail",
       "两个面板，材质统一",
       "浅色、深色、亚克力，按习惯选。"
+    ],
+    [
+      "interaction-detail",
+      "原来的操作，照常使用",
+      "单击、双击和右键菜单。"
+    ],
+    [
+      "placement-detail",
+      "展开位置，由你决定",
+      "左侧或上方，按边缘对齐。"
     ]
   ],
   "overview": "README uses four small, single-purpose images; launch boards remain archived in this project."

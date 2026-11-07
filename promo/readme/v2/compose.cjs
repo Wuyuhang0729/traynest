@@ -115,7 +115,19 @@ const compactSections = [
   ['remember-detail', '重启电脑，布局不变', '未启动，也可点击打开。'],
   ['expansion-detail', '展开方式，三选一', '手动、跟随隐藏区或悬停入口。'],
   ['material-detail', '两个面板，材质统一', '浅色、深色、亚克力，按习惯选。'],
+  ['interaction-detail', '原来的操作，照常使用', '单击、双击和右键菜单。'],
+  ['placement-detail', '展开位置，由你决定', '左侧或上方，按边缘对齐。'],
 ];
+emit('interaction-detail', 660, [
+  ['background', detailBackground],
+  ['product', `<svg x="180" y="135" width="1240" height="263" viewBox="0 0 832 176">${image(path.join(captures, 'panel-light.png'), 0, 0, 832, 352)}</svg>`],
+  ['typography', t('单击', 310, 535, 58, colors.muted) + t('双击', 745, 535, 58, colors.muted) + t('右键菜单', 1115, 535, 58, colors.muted)],
+]);
+emit('placement-detail', 660, [
+  ['background', detailBackground],
+  ['product', panel('panel-light', 65, 340, 370) + nativePanel(native, 460, 412.54, 70, 4) + panel('panel-light', 950, 130, 370) + nativePanel(native, 950, 315, 70, 4)],
+  ['typography', t('左侧 · 底部对齐', 65, 270, 42, colors.muted) + t('上方 · 左侧对齐', 950, 80, 42, colors.muted)],
+]);
 const manifestPath = path.join(__dirname, 'manifest.json');
 const manifest = JSON.parse(fs.readFileSync(manifestPath));
 manifest.compactSections = compactSections;

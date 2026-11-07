@@ -15,9 +15,20 @@
 <td align="center"><strong>展开方式，三选一</strong><br><img src="assets/readme/expansion-detail.png" width="360" alt="手动、跟随隐藏区、悬停入口三选一"><br>手动、跟随隐藏区或悬停入口。</td>
 <td align="center"><strong>两个面板，材质统一</strong><br><img src="assets/readme/material-detail.png" width="360" alt="收纳面板与系统隐藏区使用一致的深色材质"><br>浅色、深色、亚克力，按习惯选。</td>
 </tr>
+<tr>
+<td align="center"><strong>原来的操作，照常使用</strong><br><img src="assets/readme/interaction-detail.png" width="360" alt="已收纳图标继续支持原软件操作"><br>单击、双击和右键菜单。</td>
+<td align="center"><strong>展开位置，由你决定</strong><br><img src="assets/readme/placement-detail.png" width="360" alt="左侧底部对齐、上方左侧对齐"><br>左侧或上方，按边缘对齐。</td>
+</tr>
 </table>
 
-右键入口打开独立设置窗口。还能选择左侧／上方展开、每行 5–8 个图标和开机启动。
+| 还有这些 | 功能 |
+| --- | --- |
+| 独立设置 | 调整展开方式、位置、材质和每行 5–8 个图标 |
+| 未启动软件 | 保留原位；可指定 EXE 或快捷方式，点击尝试启动 |
+| 开机启动 | 登录后运行 TrayNest，默认关闭 |
+| 正常退出 | 恢复原图标和系统背景，保留收纳布局 |
+| 移回全部 | 确认后恢复图标并清空收纳项目 |
+| 诊断与反馈 | 在设置中复制或导出脱敏报告 |
 
 ## 安装
 
