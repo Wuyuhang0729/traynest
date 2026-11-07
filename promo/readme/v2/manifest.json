@@ -57,5 +57,28 @@
     "brand",
     "product",
     "typography"
-  ]
+  ],
+  "compactSections": [
+    [
+      "organize-detail",
+      "拖进来，排顺手",
+      "拖入收纳，拖动排序，拖出移回。"
+    ],
+    [
+      "remember-detail",
+      "重启电脑，布局不变",
+      "未启动，也可点击打开。"
+    ],
+    [
+      "expansion-detail",
+      "展开方式，三选一",
+      "手动、跟随隐藏区或悬停入口。"
+    ],
+    [
+      "material-detail",
+      "两个面板，材质统一",
+      "浅色、深色、亚克力，按习惯选。"
+    ]
+  ],
+  "overview": "README uses four small, single-purpose images; launch boards remain archived in this project."
 }

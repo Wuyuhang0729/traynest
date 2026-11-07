@@ -88,3 +88,40 @@ fs.writeFileSync(path.join(__dirname, 'manifest.json'), JSON.stringify({ version
 const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="TrayNest：从系统隐藏区挑一组图标，单独收好。支持拖动排序、布局记忆、按习惯展开与双面板材质同步。"><title>TrayNest · 图标多，也能管理</title><style>*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:#f1f5fa;color:#102b46;font:16px 'Microsoft YaHei UI','Segoe UI',sans-serif}header{max-width:1280px;margin:auto;padding:24px;display:flex;align-items:center;justify-content:space-between;gap:20px}header strong{display:flex;align-items:center;gap:10px;font-size:20px}header img{width:32px;height:32px}nav{display:flex;gap:20px;align-items:center}a{color:#1865da;text-decoration:none}.download{background:#1865da;color:white;padding:12px 20px;border-radius:24px}main{max-width:1280px;margin:auto}figure{margin:0 0 32px;background:white;border-radius:24px;overflow:hidden;box-shadow:0 12px 45px #142e4d0b}figure>img{width:100%;height:auto;display:block}figcaption{padding:16px 28px;color:#526d88;font-size:14px;display:flex;justify-content:space-between;gap:20px}footer{max-width:1280px;padding:24px 28px 60px;margin:auto;color:#526d88;line-height:1.9}footer strong{color:#102b46}@media(max-width:700px){header{padding:16px}nav{gap:12px;font-size:13px}.source{display:none}main{padding:0 8px}figure{border-radius:14px;margin-bottom:16px}figcaption{padding:12px 16px;font-size:12px}figcaption span{display:none}}@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}</style></head><body><header><strong><img src="assets/traynest.png" alt="">TrayNest</strong><nav><a class="source" href="https://github.com/Wuyuhang0729/traynest">GitHub</a><a href="#install">如何安装</a><a class="download" href="https://github.com/Wuyuhang0729/traynest/releases/tag/v0.2.0-preview.12">下载预览版</a></nav></header><main>${sections.map(([name, title, description], i) => `<figure><img ${i ? 'loading="lazy"' : 'fetchpriority="high"'} src="../../../assets/readme/${name}.png" alt="${title}：${description}"><figcaption><span>${description}</span><a href="layers/${name}.svg">可编辑 SVG ↗</a></figcaption></figure>`).join('')}</main><footer id="install"><strong>Windows 11 x64 · 开源预览版</strong><p>下载并完整解压，双击 Install.cmd。安装后从桌面打开 TrayNest，把想收纳的图标拖进面板。无需另外安装 .NET，默认不开启开机启动。</p><p>右键入口 → 设置。可选择展开方式，调整左侧／上方位置、5–8 列及材质。材质同步关闭后恢复系统原背景。</p><p>当前在 Windows 11 25H2 验证；第三方图标为公开演示素材，不代表逐项兼容认证。<a href="../../../docs/COMPATIBILITY.md">兼容性说明</a> · <a href="CREDITS.md">图层与素材说明</a> · <a href="https://github.com/Wuyuhang0729/traynest/issues/new?template=bug_report.yml">反馈问题</a></p></footer></body></html>`;
 fs.writeFileSync(path.join(__dirname, 'index.html'), html);
 
+// Small, single-purpose illustrations for the repository overview.
+// The larger launch boards remain editable source material, outside the README flow.
+const detailBackground = r(0, 0, 1600, 660, 0, '#f5f8fc');
+emit('organize-detail', 660, [
+  ['background', detailBackground],
+  ['product', panel('panel-reorder', 180, 68, 1240)],
+  ['gesture', '<path d="M828 323l0-103 73 73-40-1-18 39z" fill="#1765d9" stroke="white" stroke-width="8" stroke-linejoin="round"/>'],
+]);
+emit('remember-detail', 660, [
+  ['background', detailBackground],
+  ['product', panel('panel-offline', 180, 68, 1240)],
+]);
+emit('expansion-detail', 660, [
+  ['background', detailBackground],
+  ['product', `<svg x="315" y="190" width="970" height="182" viewBox="695 247 166 32">${image(path.join(captures, 'settings-general.png'), 0, 0, 936, 719)}</svg>`],
+  ['typography', t('手动展开', 163, 501, 52, colors.muted) + t('跟随系统隐藏区', 570, 501, 52, colors.muted) + t('悬停入口', 1190, 501, 52, colors.blue, 600)],
+]);
+emit('material-detail', 660, [
+  ['background', detailBackground],
+  ['product', panel('panel-dark', 105, 154, 760) + nativePanel(native, 913, 323.14, 127, 4, 'dark')],
+  ['typography', t('收纳面板', 110, 115, 43, colors.muted) + t('系统隐藏区', 915, 264, 43, colors.muted)],
+]);
+const compactSections = [
+  ['organize-detail', '拖进来，排顺手', '拖入收纳，拖动排序，拖出移回。'],
+  ['remember-detail', '重启电脑，布局不变', '未启动，也可点击打开。'],
+  ['expansion-detail', '展开方式，三选一', '手动、跟随隐藏区或悬停入口。'],
+  ['material-detail', '两个面板，材质统一', '浅色、深色、亚克力，按习惯选。'],
+];
+const manifestPath = path.join(__dirname, 'manifest.json');
+const manifest = JSON.parse(fs.readFileSync(manifestPath));
+manifest.compactSections = compactSections;
+manifest.overview = 'README uses four small, single-purpose images; launch boards remain archived in this project.';
+fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+const compactHtml = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TrayNest · 图标多，也能管理</title><style>*{box-sizing:border-box}body{margin:0;color:#102b46;background:#f5f8fc;font:16px 'Microsoft YaHei UI','Segoe UI',sans-serif}header,main,footer{max-width:1100px;margin:auto;padding:24px}header{display:flex;align-items:center;justify-content:space-between;gap:16px}header strong{display:flex;align-items:center;gap:10px;font-size:22px}header img{width:32px;height:32px}a{color:#1865da;text-decoration:none}.download{background:#1865da;color:white;border-radius:24px;padding:12px 20px;white-space:nowrap}.hero{width:100%;display:block;border-radius:22px}.intro{font-size:21px;line-height:1.8;margin:28px 0 40px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}article{background:white;border:1px solid #e3eaf2;border-radius:22px;overflow:hidden}article img{width:100%;display:block}article h2{font-size:22px;margin:22px 24px 8px}article p{color:#526d88;margin:0 24px 24px;line-height:1.7}footer{color:#526d88;line-height:1.9;padding-bottom:50px}@media(max-width:650px){header,main,footer{padding:16px}header strong{font-size:18px}.download{padding:10px 14px;font-size:14px}.intro{font-size:17px}.grid{grid-template-columns:1fr;gap:16px}article h2{font-size:20px}.hero{border-radius:14px}}</style></head><body><header><strong><img src="assets/traynest.png" alt="">TrayNest</strong><a class="download" href="https://github.com/Wuyuhang0729/traynest/releases/tag/v0.2.0-preview.12">下载预览版</a></header><main><img class="hero" src="../../../assets/readme/hero-v2.png" alt="TrayNest：图标多，也能管理"><p class="intro">从系统隐藏区挑一组图标，单独收好。位置记得住，展开按习惯，外观也统一。</p><div class="grid">${compactSections.map(([name,title,caption])=>`<article><h2>${title}</h2><img src="../../../assets/readme/${name}.png" alt="${title}"><p>${caption}</p></article>`).join('')}</div></main><footer>Windows 11 x64 · 开源预览版。完整解压后双击 Install.cmd，从桌面打开即可。<br><a href="https://github.com/Wuyuhang0729/traynest">GitHub 与使用说明</a> · <a href="CREDITS.md">可编辑图层与素材来源</a></footer></body></html>`;
+fs.writeFileSync(path.join(__dirname, 'index.html'), compactHtml);
+
+
