@@ -4,11 +4,12 @@
     <UseWindowsForms>true</UseWindowsForms><UseWPF>true</UseWPF><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
     <PlatformTarget>x64</PlatformTarget><ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>NestedTray</AssemblyName><RootNamespace>NestedTray</RootNamespace>
-    <Version>0.2.0-preview.10</Version><AssemblyTitle>TrayNest</AssemblyTitle>
+    <Version>0.2.0-preview.12</Version><AssemblyTitle>TrayNest</AssemblyTitle>
     <ApplicationIcon>Resources/TrayNest.ico</ApplicationIcon>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
   <ItemGroup>
+    <Content Include="../../artifacts/native-bridge/payload/native/*" Link="native/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <EmbeddedResource Include="Resources/TrayNest.ico" LogicalName="NestedTray.TrayNest.ico" />
     <Content Include="Resources/TrayNest.ico" Link="TrayNest.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Compile Include="../../verification/Shared/NativeTray.cs" Link="NativeTray.cs" />

@@ -118,5 +118,7 @@ internal sealed partial class TrayPanel
         internal bool GlassSurface;
         protected override void OnPaintBackground(PaintEventArgs e)
         {if(GlassSurface)PanelTheme.PaintGlass(e.Graphics,ClientRectangle);else base.OnPaintBackground(e);}
+        protected override void OnPaint(PaintEventArgs e)
+        {if(!GlassSurface||!GlassText.Draw(this,e.Graphics,Text,ForeColor))base.OnPaint(e);}
     }
 }

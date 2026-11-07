@@ -1,0 +1,24 @@
+{
+  "Version": "0.2.0-preview.12",
+  "Renderer": "Current production TrayPanel and SettingsWindow compiled from src/NestedTray",
+  "PanelLogicalScale": 4,
+  "Ids": [
+    "baidupan",
+    "xunlei",
+    "snipaste",
+    "everything",
+    "tencent-meeting",
+    "netease-music",
+    "qqmusic",
+    "obs",
+    "sunlogin",
+    "wecom"
+  ],
+  "NoUserDesktop": true,
+  "NoRealTrayConnection": true,
+  "DemoStates": [
+    "reorder highlight",
+    "two offline slots",
+    "material sync shown enabled without connecting native Explorer"
+  ]
+}

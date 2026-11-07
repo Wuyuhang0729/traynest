@@ -20,7 +20,7 @@ if(!(Test-Path -LiteralPath $desktop -PathType Container)){throw '未找到桌�
 if(Test-Path -LiteralPath $target){
  if(!(Test-Path -LiteralPath (Join-Path $target 'NestedTray.exe') -PathType Leaf)){throw '目标文件夹不是 TrayNest 安装目录，请选择其他位置。'}
  foreach($process in @(Get-Process -Name NestedTray -ErrorAction SilentlyContinue)){
-  if($process.Path -and $process.Path.StartsWith($target+'\',[StringComparison]::OrdinalIgnoreCase)){throw '请先右键托盘中的 TrayNest，选择“退出”，再重新安装。'}
+  if($process.Path -and $process.Path.StartsWith($target+'\',[StringComparison]::OrdinalIgnoreCase)){throw '请先打开 TrayNest 设置，点击左下方“退出 TrayNest”，再重新安装。'}
  }
 }
 $parent=Split-Path $target -Parent

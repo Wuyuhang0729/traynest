@@ -8,9 +8,12 @@ if($version-notmatch '^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$'){throw 'Invalid proje
 $work=Join-Path $workspace ('artifacts\work\'+[Guid]::NewGuid().ToString('N'))
 $publish=Join-Path $work 'TrayNest'
 $env:DOTNET_CLI_TELEMETRY_OPTOUT='1';$env:DOTNET_GENERATE_ASPNET_CERTIFICATE='false'
+if(!(Test-Path -LiteralPath (Join-Path $workspace '.tools/native-bridge/generated/winrt/Windows.UI.Xaml.Controls.h'))){& (Join-Path $PSScriptRoot 'Prepare-NativeBridgeTools.ps1') -Dotnet $Dotnet}
+& (Join-Path $PSScriptRoot 'Build-NativeBridge.ps1')
 & $Dotnet publish $project -c Release -r win-x64 --self-contained true --source https://api.nuget.org/v3/index.json -p:DebugType=None -p:DebugSymbols=false -o $publish
 if($LASTEXITCODE-ne 0){exit $LASTEXITCODE}
 & (Join-Path $PSScriptRoot 'Copy-RuntimeNotices.ps1') -AssetsFile (Join-Path $workspace 'src\NestedTray\obj\project.assets.json') -Destination $publish
+Copy-Item -LiteralPath (Join-Path $workspace 'artifacts/native-bridge/payload/licenses/native-bridge') -Destination (Join-Path $publish 'licenses') -Recurse -Force
 foreach($name in @('Create-DesktopShortcut.ps1','Install-TrayNest.ps1','Install.cmd')){Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $publish}
 foreach($name in @('README.md','BUILDING.md','LICENSE')){Copy-Item -LiteralPath (Join-Path $workspace $name) -Destination $publish -Force}
 Copy-Item -LiteralPath (Join-Path $workspace 'docs') -Destination $publish -Recurse -Force
@@ -18,7 +21,7 @@ if(Test-Path -LiteralPath (Join-Path $workspace 'assets/readme')){
  New-Item -ItemType Directory -Path (Join-Path $publish 'assets') -Force|Out-Null
  Copy-Item -LiteralPath (Join-Path $workspace 'assets/readme') -Destination (Join-Path $publish 'assets') -Recurse -Force
  New-Item -ItemType Directory -Path (Join-Path $publish 'promo/readme') -Force|Out-Null
- foreach($relative in @('CREDITS.md','review/SOURCES.md','review/personas/说明与来源.md')){
+ foreach($relative in @('CREDITS.md','v2/CREDITS.md','review/SOURCES.md','review/personas/说明与来源.md')){
   $destination=Join-Path $publish ('promo/readme/'+$relative)
   New-Item -ItemType Directory -Path (Split-Path $destination -Parent) -Force|Out-Null
   Copy-Item -LiteralPath (Join-Path $workspace ('promo/readme/'+$relative)) -Destination $destination -Force

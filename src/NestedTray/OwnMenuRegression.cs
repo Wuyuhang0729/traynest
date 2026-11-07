@@ -23,32 +23,18 @@ internal static class OwnMenuRegression
             Open();var point=button.PointToScreen(new Point(30,30));Native.SetCursorPos(point.X,point.Y);Mouse(2);Pump(40);Mouse(4);Pump(150);
             result["OutsideClickClosesMenuWithoutPanel"]=!app.OwnMenu.Visible;result["OutsideWindowClickCount"]=clicked?1:0;
             Open();NativeTray.PostMessage(app.Entry.Handle,0x8000+741,0,(nint)((401u<<16)|0x7B));Pump(120);result["RepeatedEntryCallbackTogglesClosed"]=!app.OwnMenu.Visible;
-            Open();var item=AutomationElement.FromHandle(app.OwnMenu.Handle).FindFirst(TreeScope.Descendants,new PropertyCondition(AutomationElement.NameProperty,"打开面板"));
-            ((InvokePattern)item.GetCurrentPattern(InvokePattern.Pattern)).Invoke();Pump(150);result["CommandClosesMenuAndOpensPanel"]=!app.OwnMenu.Visible&&app.Panel.Visible;
-            Open();var down=new Native.Input{Type=1,Keyboard=new Native.KeyInput{Key=27}};Send(down);Pump(40);down.Keyboard.Flags=2;Send(down);Pump(150);result["EscapeClosesMenuWithPanel"]=!app.OwnMenu.Visible;
-            ClickSubmenu("弹出位置","上方");
-            result["PhysicalSubmenuAboveClickPersists"]=Settings.Load().Placement==PopupPlacement.Above&&app.Panel.Placement==PopupPlacement.Above;
-            ClickSubmenu("每行图标数","6");
-            result["PhysicalSubmenuColumnClickPersists"]=Settings.Load().Columns==6&&app.Panel.FixedColumns==6;
-            ClickSubmenu("弹出位置","左侧");
-            result["PhysicalSubmenuLeftClickPersists"]=Settings.Load().Placement==PopupPlacement.Left&&app.Panel.Placement==PopupPlacement.Left;
-            Open();var parent=app.OwnMenu.Items.OfType<ToolStripMenuItem>().Single(item=>item.Text=="弹出位置");parent.ShowDropDown();Pump(80);
-            var child=parent.DropDown;var childPoint=child.PointToScreen(new Point(child.Width/2,child.Height/2));
-            app.OtherPointerDown(childPoint,child.Handle);Pump(30);
-            result["RightPressInsideSubmenuDoesNotCloseRoot"]=app.OwnMenu.Visible&&child.Visible;
-            Native.SetCursorPos(50,50);Mouse(2);Pump(40);Mouse(4);Pump(100);
-            result["OutsideClickClosesRootAndSubmenu"]=!app.OwnMenu.Visible&&!child.Visible;
+            result["SettingsContentsRemovedFromMenu"]=!app.OwnMenu.Items.OfType<ToolStripMenuItem>().Any(item=>item.HasDropDownItems||item.Text is "开机启动" or "每行图标数" or "弹出位置" or "面板外观" or "诊断与反馈…");
+            Open();var settingsItem=app.OwnMenu.Items.Cast<ToolStripItem>().Single(item=>item.Text=="设置");
+            var settingsPoint=app.OwnMenu.PointToScreen(new Point(settingsItem.Bounds.Left+settingsItem.Width/2,settingsItem.Bounds.Top+settingsItem.Height/2));
+            Native.SetCursorPos(settingsPoint.X,settingsPoint.Y);Mouse(2);Pump(60);
+            result["SettingsMenuRemainsUntilMouseUp"]=app.OwnMenu.Visible;
+            Mouse(4);Pump(350);
+            var window=Application.OpenForms.OfType<SettingsWindow>().SingleOrDefault();
+            result["PhysicalSettingsClickOpensIndependentWindow"]=window is {Visible:true,ShowInTaskbar:true}&&!app.OwnMenu.Visible;
+            result["MenuContainsOnlySettings"]=app.OwnMenu.Items.Count==1&&app.OwnMenu.Items[0].Text=="设置";
+            result["ExitAvailableInSettings"]=window?.Controls.Find("ExitApplication",true).Length==1;
+            window?.Close();
             for(int i=0;i<5;i++){Open();app.OwnMenu.Close();Pump(30);}result["RepeatedOpenCloseDoesNotStick"]=!app.OwnMenu.Visible;
-            void ClickSubmenu(string parentText,string childText)
-            {
-                Open();var parentItem=app.OwnMenu.Items.OfType<ToolStripMenuItem>().Single(item=>item.Text==parentText);
-                parentItem.ShowDropDown();Pump(80);
-                var childItem=parentItem.DropDownItems.Cast<ToolStripItem>().Single(item=>item.Text==childText);
-                var target=parentItem.DropDown.PointToScreen(new Point(childItem.Bounds.Left+childItem.Width/2,childItem.Bounds.Top+childItem.Height/2));
-                Native.SetCursorPos(target.X,target.Y);Mouse(2);Pump(60);
-                result["SubmenuRemainsOpenDuringPress_"+parentText+"_"+childText]=app.OwnMenu.Visible&&parentItem.DropDown.Visible;
-                Mouse(4);Pump(160);
-            }
             void Open(){var work=Screen.PrimaryScreen!.WorkingArea;Native.SetCursorPos(work.Right-60,work.Bottom-100);NativeTray.PostMessage(app.Entry.Handle,0x8000+741,0,(nint)((401u<<16)|0x7B));Pump(150);if(!app.OwnMenu.Visible)throw new InvalidOperationException("Entry menu failed to open.");}
         }
         catch(Exception error){errors.Add(error.ToString());}

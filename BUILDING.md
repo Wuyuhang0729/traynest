@@ -8,15 +8,21 @@
 pwsh -File scripts/Build-Release.ps1
 ```
 
-首次构建需要访问 NuGet 官方源下载运行时包。脚本在 `artifacts/` 生成自带运行时的 Windows x64 ZIP、校验文件和本次独立构建目录，并保留运行时许可证。ZIP同时包含双击安装入口 `Install.cmd`、安装脚本与桌面快捷方式脚本。
+首次构建需要联网下载 .NET 运行时、Microsoft C++/WinRT 和 LLVM-MinGW 工具链。脚本将原生构建工具放在项目的 `.tools/native-bridge/` 中，不安装全局编译器；核对工具链摘要和 C++/WinRT 包签名后生成 WinRT 头文件。脚本在 `artifacts/` 生成自带运行时的 Windows x64 ZIP、校验文件和本次独立构建目录，并保留运行时和原生组件许可证。ZIP同时包含双击安装入口 `Install.cmd`、安装脚本与桌面快捷方式脚本。
 
 也可以直接构建：
 
 ```powershell
+pwsh -File scripts/Prepare-NativeBridgeTools.ps1
+pwsh -File scripts/Build-NativeBridge.ps1
 dotnet publish src/NestedTray/NestedTray.csproj -c Release -r win-x64 --self-contained true --source https://api.nuget.org/v3/index.json -o artifacts/publish
 ```
 
 若分发手动构建结果，请一并保留项目许可证及运行时包提供的许可证和第三方声明；可以使用 `scripts/Copy-RuntimeNotices.ps1` 补齐。
+
+材质同步需要保留整个 `native/` 目录及 `artifacts/native-bridge/payload/licenses/native-bridge/` 中的声明。清单包含原生 DLL 和引导程序的 SHA256，主程序在使用前核对；更新时请一起替换。原生源码位于 `src/TrayNest.NativeBridge/`，使用 Microsoft 的 XAML Diagnostics 接口和 C++/WinRT；自有测试宿主不包含在安装包里。不要只分发托盘 EXE。
+
+`verification/Test-NativeBridgeFixture.ps1` 在自有 XAML 宿主验证目标匹配、材质切换、精确恢复和控制进程异常退出恢复。`--self-test-native-material <独立目录>` 与 `--self-test-material-settings <独立目录>` 会实际连接系统隐藏区，检查背景及设置交互并在结束后恢复；应先退出正在使用的 TrayNest，顺序运行，勿与其他桌面操作并发。
 
 `verification/Shared/NativeTray.cs` 和 `verification/StandaloneProbe/TrayPacket.cs` 是项目通过相对路径引用的源码，请保留目录结构。
 

@@ -10,6 +10,9 @@ internal sealed class Settings
     public int Columns {get;set;}=5;
     public PopupPlacement Placement {get;set;}=PopupPlacement.Left;
     public PanelAppearance Appearance {get;set;}=PanelAppearance.FollowSystem;
+    public bool FollowNativeOverflow {get;set;}
+    public bool HoverToOpen {get;set;}
+    public bool MatchPanelMaterials {get;set;}
     internal Action? BeforeSave;
     internal static string DirectoryPath=>Environment.GetEnvironmentVariable("NESTEDTRAY_TEST_PROFILE")??Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"NestedTray");
     internal static string FilePath=>Path.Combine(DirectoryPath,"settings.json");
@@ -24,6 +27,7 @@ internal sealed class Settings
             value.Columns=Math.Clamp(value.Columns,5,8);
             if(!Enum.IsDefined(value.Placement))value.Placement=PopupPlacement.Left;
             if(!Enum.IsDefined(value.Appearance))value.Appearance=PanelAppearance.FollowSystem;
+            if(value.FollowNativeOverflow&&value.HoverToOpen)value.HoverToOpen=false;
             value.Collected=value.Collected.Distinct(StringComparer.Ordinal).ToList();
             value.Tools=value.Tools.Where(tool=>value.Collected.Contains(tool.Rule)).DistinctBy(tool=>tool.Rule).ToList();return value;
         }
@@ -50,6 +54,13 @@ internal sealed class Settings
     {
         var previous=Appearance;Appearance=value;
         try{Save();}catch{Appearance=previous;throw;}
+    }
+    internal void ChangeBehavior(bool follow,bool hover,bool match)
+    {
+        if(follow&&hover)throw new ArgumentException("自动展开方式只能选择一种。");
+        var previous=(FollowNativeOverflow,HoverToOpen,MatchPanelMaterials);
+        (FollowNativeOverflow,HoverToOpen,MatchPanelMaterials)=(follow,hover,match);
+        try{Save();}catch{(FollowNativeOverflow,HoverToOpen,MatchPanelMaterials)=previous;throw;}
     }
     internal static bool StartupEnabled
     {

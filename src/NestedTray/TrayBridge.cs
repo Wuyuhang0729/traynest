@@ -140,10 +140,16 @@ internal sealed class TrayBridge:IDisposable
                             {
                                 // An update may arrive before registration; keep it until callback data arrives.
                                 string exe=System.Text.Encoding.Unicode.GetString(bytes,964,520).Split('\0')[0];
-                                if(string.IsNullOrWhiteSpace(exe)){try {exe=Process.GetProcessById((int)process).MainModule?.FileName??"";}catch{exe="";}}
+                                if(string.IsNullOrWhiteSpace(exe))exe=ProcessExecutable.Read((int)process);
                                 string rule=exe.ToLowerInvariant()+"|"+(packet.Guid!=Guid.Empty?"g:"+packet.Guid.ToString("D"):"i:"+packet.Id);
                                 record=new IconRecord{Key=key,Rule=rule,Executable=exe,Window=packet.Window,Id=packet.Id,Guid=packet.Guid,ProcessId=(int)process};
                                 Icons.Add(key,record);
+                            }
+                            else if(string.IsNullOrWhiteSpace(record.Executable))
+                            {
+                                string exe=ProcessExecutable.Read((int)process);
+                                if(!string.IsNullOrWhiteSpace(exe))
+                                {record.Executable=exe;record.Rule=exe.ToLowerInvariant()+"|"+(record.Guid!=Guid.Empty?"g:"+record.Guid.ToString("D"):"i:"+record.Id);}
                             }
                             if(packet.Operation==0){record.RegistrationKnown=true;record.Window=packet.Window;record.Id=packet.Id;record.ProcessId=(int)process;}
                             if((packet.Flags&1)!=0)record.Callback=packet.Callback;

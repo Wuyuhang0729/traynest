@@ -1,0 +1,4 @@
+LIBRARY TrayNest.NativeBridge
+EXPORTS
+    DllGetClassObject
+    DllCanUnloadNow

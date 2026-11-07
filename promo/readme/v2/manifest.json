@@ -1,0 +1,61 @@
+{
+  "version": "0.2.0-preview.12",
+  "created": "2026-11-07",
+  "sections": [
+    [
+      "hero-v2",
+      "图标多，也能管理",
+      "TrayNest · Windows 11 图标面板管理工具"
+    ],
+    [
+      "workflow-v2",
+      "给隐藏区再添一个自选空间",
+      "同一组图标的收纳前后对比"
+    ],
+    [
+      "control-v2",
+      "记住布局，按习惯展开",
+      "当前生产控件演示与独立设置窗口"
+    ],
+    [
+      "appearance-v2",
+      "统一两个面板的外观",
+      "浅色、深色与亚克力材质示意"
+    ]
+  ],
+  "selected": [
+    "baidupan",
+    "xunlei",
+    "snipaste",
+    "everything",
+    "tencent-meeting",
+    "netease-music",
+    "qqmusic",
+    "obs",
+    "sunlogin",
+    "wecom"
+  ],
+  "native": [
+    "traynest",
+    "huorong",
+    "onedrive",
+    "steam"
+  ],
+  "task": [
+    "sogou",
+    "qq",
+    "wechat"
+  ],
+  "actualProduct": "captures/provenance.json",
+  "nativePanels": "vector illustration, not a recording of user desktop",
+  "acrylic": "illustrated; actual implementation verified independently",
+  "background": "built-in image_gen; full prompt in CREDITS.md",
+  "renderer": "@resvg/resvg-js 2.6.2",
+  "layers": [
+    "background",
+    "cards",
+    "brand",
+    "product",
+    "typography"
+  ]
+}

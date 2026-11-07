@@ -5,9 +5,10 @@ internal sealed class EntryIcon:NativeWindow,IDisposable
     private readonly Guid guid=new(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Environment.ProcessPath!)).AsSpan(0,16));
     private readonly System.Windows.Forms.Timer clickDelay=new(){Interval=50};
     private readonly Icon icon;
-    internal Action? Open,Menu,ExplorerRestarted,DiagnosticsRequested;
+    internal Action? Open,Menu,ExplorerRestarted,DiagnosticsRequested,SettingsRequested;
     private readonly uint taskbarCreated=Native.RegisterWindowMessageW("TaskbarCreated");
     private readonly uint diagnosticsMessage=Native.RegisterWindowMessageW("NestedTray.Diagnostics.v1");
+    private readonly uint settingsMessage=Native.RegisterWindowMessageW("NestedTray.Settings.v1");
     internal EntryIcon()
     {
         CreateHandle(new CreateParams{Caption="NestedTray entry",ExStyle=0x08000080});
@@ -24,12 +25,13 @@ internal sealed class EntryIcon:NativeWindow,IDisposable
     internal void Notify(string code)
     {
         var data=NativeTray.New(Handle,Id,guid);data.Flags=0x10|0x20;data.InfoTitle="TrayNest · "+code;
-        data.Info=ErrorCodes.Message(code)+" 右键入口可打开“诊断与反馈”。";data.InfoFlags=2;
+        data.Info=ErrorCodes.Message(code)+" 可在设置 → 关于中打开诊断与反馈。";data.InfoFlags=2;
         NativeTray.Notify(1,ref data);
     }
     protected override void WndProc(ref Message message)
     {
         if((uint)message.Msg==diagnosticsMessage){DiagnosticsRequested?.Invoke();message.Result=1;return;}
+        if((uint)message.Msg==settingsMessage){SettingsRequested?.Invoke();message.Result=1;return;}
         if((uint)message.Msg==taskbarCreated)ExplorerRestarted?.Invoke();
         if((uint)message.Msg==Callback)
         {

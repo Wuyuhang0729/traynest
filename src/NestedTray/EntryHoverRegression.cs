@@ -80,13 +80,15 @@ internal static class EntryHoverRegression
                         {Thread.Sleep(100);Ui(()=>collected=record!.Selected);}
                         Ui(()=>{checks[prefix+"DropOnEntryCollects"]=record!.Selected&&Settings.Load().Collected.Contains(record.Rule);app.Entry.DiagnosticsRequested?.Invoke();});
                         if(!collected)throw new InvalidOperationException("Entry drop did not finish within its protocol grace period");
+                        Thread.Sleep(1100);
+                        Ui(()=>{var surface=NativeOverflow.SurfaceBounds(NativeOverflow.Window,(int)Math.Round(4*app.Panel.DeviceDpi/96.0));checks[prefix+"BottomAlignsAfterNativeReflow"]=app.Panel.Visible&&app.Panel.Bottom==surface.Bottom;});
                     }
                 }
                 catch(Exception error){errors.Add(error.ToString());}
                 finally
                 {
                     Button(4);Native.SetCursorPos(previous.X,previous.Y);
-                    File.WriteAllText(Path.Combine(root,"entry-hover-test.json"),JsonSerializer.Serialize(new{Passed=errors.Count==0&&checks.Count==8&&checks.Values.All(v=>v),Checks=checks,Errors=errors},DiagnosticStore.JsonOptions));
+                    File.WriteAllText(Path.Combine(root,"entry-hover-test.json"),JsonSerializer.Serialize(new{Passed=errors.Count==0&&checks.Count==10&&checks.Values.All(v=>v),Checks=checks,Errors=errors},DiagnosticStore.JsonOptions));
                     try{app.Panel.BeginInvoke((Action)app.Shutdown);}catch(InvalidOperationException){}
                 }
                 void Ui(Action action)
@@ -102,7 +104,7 @@ internal static class EntryHoverRegression
         ready.Start();Application.Run(app);driver?.Join(2000);
         if(record!=null)NativeTray.PostMessage(record.Window,0x10,0,0);
         if(!fixture.WaitForExit(2000)){fixture.Kill();fixture.WaitForExit(1000);}
-        return errors.Count==0&&checks.Count==8&&checks.Values.All(v=>v)?0:1;
+        return errors.Count==0&&checks.Count==10&&checks.Values.All(v=>v)?0:1;
     }
     private static void Button(uint flags)
     {var input=new Native.Input{Type=0,Mouse=new Native.MouseInput{Flags=flags}};if(Native.SendInput(1,[input],Marshal.SizeOf<Native.Input>())!=1)throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());}

@@ -69,6 +69,18 @@ internal sealed partial class TrayPanel:Form
     internal PopupPlacement Placement=PopupPlacement.Left;
     internal nint TaskbarWindow;
     private nint layerTaskbar;
+    private long realignUntil,nextRealign;
+    private Rectangle lastNativeHost;
+    internal void RequestRealignment(){realignUntil=Environment.TickCount64+1000;}
+    internal void FollowNativeBounds()
+    {
+        if(!Visible||IsOpening||IsDismissing||!CanQueryExplorerAutomation||IsReordering||HasReorderPreview)return;
+        nint overflow=NativeOverflow.Window;if(!NativeOverflow.Visible||!Native.GetWindowRect(overflow,out var raw))return;
+        var host=Native.Rect(raw);long now=Environment.TickCount64;
+        if(host!=lastNativeHost){lastNativeHost=host;RequestRealignment();}
+        if(now>realignUntil||now<nextRealign)return;
+        nextRealign=now+250;PositionPanel();
+    }
     internal void SetPlacement(PopupPlacement value)
     {
         if(Placement==value)return;Placement=value;
@@ -244,6 +256,7 @@ internal sealed partial class TrayPanel:Form
     }
     internal void Open(bool preview=false)
     {
+        RequestRealignment();
         RefreshToolStates();
         bool animate=!Visible||IsDismissing;
         Point? interrupted=IsDismissing?Location:null;
@@ -272,6 +285,7 @@ internal sealed partial class TrayPanel:Form
         int count=tiles.Count+(incomingIcon!=null&&!tiles.ContainsKey(incomingIcon.Key)?1:0);
         var layout=ContentTrayLayout.Measure(count,CellPixels,surfacePadding,work.Size,FixedColumns);
         bool resized=ClientSize!=layout.Surface;
+        if(resized)RequestRealignment();
         grid.SuspendLayout();
         ClientSize=layout.Surface;
         grid.Bounds=new Rectangle(surfacePadding,surfacePadding,Width-surfacePadding*2,Height-surfacePadding*2);empty.Bounds=grid.Bounds;
