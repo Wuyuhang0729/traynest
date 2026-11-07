@@ -8,15 +8,15 @@
 
 <table>
 <tr>
-<td width="50%" align="center"><strong>拖进来，排顺手</strong><br><img src="assets/readme/organize-detail.png" width="360" alt="面板内拖动排序"><br>拖入收纳，拖动排序，拖出移回。</td>
+<td width="50%" align="center"><strong>自由拖动排序</strong><br><img src="assets/readme/organize-detail.png" width="360" alt="面板内拖动排序"><br>拖入收纳，拖动排序，拖出移回。</td>
 <td width="50%" align="center"><strong>重启电脑，布局不变</strong><br><img src="assets/readme/remember-detail.png" width="360" alt="淡色格位保留未启动软件的位置"><br>未启动，也可点击打开。</td>
 </tr>
 <tr>
-<td align="center"><strong>展开方式，三选一</strong><br><img src="assets/readme/expansion-detail.png" width="360" alt="手动、跟随隐藏区、悬停入口三选一"><br>手动、跟随隐藏区或悬停入口。</td>
+<td align="center"><strong>展开方式自由选择</strong><br><img src="assets/readme/expansion-detail.png" width="360" alt="手动、跟随隐藏区、悬停入口三选一"><br>手动、跟随隐藏区或悬停入口。</td>
 <td align="center"><strong>两个面板，材质统一</strong><br><img src="assets/readme/material-detail.png" width="360" alt="收纳面板与系统隐藏区使用一致的深色材质"><br>浅色、深色、亚克力，按习惯选。</td>
 </tr>
 <tr>
-<td align="center"><strong>原来的操作，照常使用</strong><br><img src="assets/readme/interaction-detail.png" width="360" alt="已收纳图标继续支持原软件操作"><br>单击、双击和右键菜单。</td>
+<td align="center"><strong>不改变图标使用方式</strong><br><img src="assets/readme/interaction-detail.png" width="360" alt="已收纳图标继续支持原软件操作"><br>单击、双击和右键菜单。</td>
 <td align="center"><strong>展开位置，由你决定</strong><br><img src="assets/readme/placement-detail.png" width="360" alt="左侧底部对齐、上方左侧对齐"><br>左侧或上方，按边缘对齐。</td>
 </tr>
 </table>
