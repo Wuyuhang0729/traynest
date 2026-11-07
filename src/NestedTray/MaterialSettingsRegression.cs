@@ -8,7 +8,7 @@ internal static class MaterialSettingsRegression
     {
         Directory.CreateDirectory(root);Environment.SetEnvironmentVariable("NESTEDTRAY_TEST_PROFILE",Path.GetFullPath(root));
         new Settings{Appearance=PanelAppearance.Acrylic}.Save();var checks=new Dictionary<string,bool>();var errors=new List<string>();
-        using var app=new TrayApplication(true);
+        using var app=new TrayApplication(true);string phase="settings";
         using var deadline=new System.Threading.Timer(_=>Process.GetCurrentProcess().Kill(),null,30000,Timeout.Infinite);
         try
         {
@@ -23,19 +23,21 @@ internal static class MaterialSettingsRegression
             appearance.SelectedIndex=2;Pump(900);checks["LightSelectionUpdatesCollection"]=app.Panel.LightSurface&&Settings.Load().Appearance==PanelAppearance.Light;
             appearance.SelectedIndex=0;Pump(900);checks["FollowSystemUsesSharedMaterial"]=app.Panel.Appearance==PanelAppearance.Acrylic&&Settings.Load().Appearance==PanelAppearance.FollowSystem;
             appearance.SelectedIndex=1;Pump(900);
-            window.WindowState=FormWindowState.Minimized;NativeOverflow.TryOpen(app.Bridge.ExplorerWindow);app.Panel.Open();Pump(300);
-            NativeOverflow.TryOpen(app.Bridge.ExplorerWindow);Native.SetForegroundWindow(NativeOverflow.Window);app.Panel.RequestRealignment();Pump(850);app.Panel.FollowNativeBounds();
+            phase="hide-settings";window.Hide();Pump(600);
+            phase="open-native";NativeOverflow.TryOpen(app.Bridge.ExplorerWindow);Wait(()=>NativeOverflow.Visible,1500);
+            Native.SetForegroundWindow(NativeOverflow.Window);Pump(450);phase="open-collection";app.Panel.Open();
+            Wait(()=>app.Panel.Visible&&!app.Panel.IsAnimating,1800);app.Panel.RequestRealignment();Pump(300);app.Panel.FollowNativeBounds();Pump(220);
             checks["BothPanelsVisibleForMaterialPreview"]=NativeOverflow.Visible&&app.Panel.Visible;
             Native.GetWindowRect(NativeOverflow.Window,out var nativeRect);var bounds=Rectangle.Union(Native.Rect(nativeRect),app.Panel.Bounds);bounds.Inflate(12,12);
             var surface=NativeOverflow.SurfaceBounds(NativeOverflow.Window,(int)Math.Round(4*app.Panel.DeviceDpi/96.0));
             checks["SynchronizedPanelsBottomAlign"]=app.Panel.Bottom==surface.Bottom;
             File.WriteAllText(Path.Combine(root,"paired-geometry.json"),JsonSerializer.Serialize(new{Native=Native.Rect(nativeRect),Surface=surface,Panel=app.Panel.Bounds,Entry=app.Panel.EntryRectangle,app.Panel.IsOpening,app.Panel.DragPreview},DiagnosticStore.JsonOptions));
             using(var bitmap=new Bitmap(bounds.Width,bounds.Height)){using(var graphics=Graphics.FromImage(bitmap))graphics.CopyFromScreen(bounds.Location,Point.Empty,bounds.Size);bitmap.Save(Path.Combine(root,"synchronized-panels.png"));}
-            window.WindowState=FormWindowState.Normal;window.Activate();mirror.Checked=false;Wait(()=>mirror.Enabled,5000);
+            window.Show();window.Activate();mirror.Checked=false;Wait(()=>mirror.Enabled,5000);
             checks["DisableRestoresAndPersists"]=!mirror.Checked&&!Settings.Load().MatchPanelMaterials;
             window.Close();
         }
-        catch(Exception error){errors.Add(error.ToString());}
+        catch(Exception error){errors.Add(phase+": "+error);File.WriteAllText(Path.Combine(root,"failure-state.json"),JsonSerializer.Serialize(new{Phase=phase,NativeVisible=NativeOverflow.Visible,PanelVisible=app.Panel.Visible,app.Panel.IsAnimating,app.Panel.IsPreparing,app.Panel.IsDismissing,Geometry=app.Panel.PresentationGeometry},DiagnosticStore.JsonOptions));}
         bool passed=errors.Count==0&&checks.Count==8&&checks.Values.All(value=>value);
         File.WriteAllText(Path.Combine(root,"material-settings-test.json"),JsonSerializer.Serialize(new{Passed=passed,Checks=checks,Errors=errors},DiagnosticStore.JsonOptions));return passed?0:1;
     }

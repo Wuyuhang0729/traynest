@@ -15,6 +15,7 @@ internal sealed class SettingsWindow:Form
     private readonly Color accent=Color.FromArgb(24,98,211),muted=Color.FromArgb(99,110,128);
     private readonly List<Font> ownedFonts=[];
     private int page;
+    private Control? expansionOrderRow;
     internal Action? OpenDiagnostics;
     internal Action? OpenPanelRequested,RefreshIconsRequested,RestoreAllRequested,ExitRequested;
     internal Func<bool,Task>? ChangeMaterialSync;
@@ -47,6 +48,7 @@ internal sealed class SettingsWindow:Form
     private Font OwnFont(float size,FontStyle style=FontStyle.Regular){var existing=ownedFonts.FirstOrDefault(font=>font.Size==size&&font.Style==style);if(existing!=null)return existing;var font=new Font("Microsoft YaHei UI",size,style);ownedFonts.Add(font);return font;}
     internal void SelectPage(int index)
     {
+        expansionOrderRow=null;
         page=index;
         foreach(var button in navigation){bool active=navigation.IndexOf(button)==page;button.BackColor=active?Color.FromArgb(215,230,252):Color.FromArgb(235,240,247);button.ForeColor=active?accent:ForeColor;}
         content.SuspendLayout();foreach(Control control in content.Controls.Cast<Control>().ToArray())control.Dispose();content.Controls.Clear();content.AutoScrollPosition=Point.Empty;
@@ -57,7 +59,9 @@ internal sealed class SettingsWindow:Form
         if(page==0)
         {
             Add(Heading("自动展开"));
-            Add(ChoiceRow("ExpansionMode","展开方式","选择一种：手动打开、随系统隐藏区打开，或悬停入口约半秒。",["手动展开","跟随系统隐藏区","悬停入口"],settings.FollowNativeOverflow?1:settings.HoverToOpen?2:0,index=>settings.ChangeBehavior(index==1,index==2,settings.MatchPanelMaterials)));
+            Add(ChoiceRow("ExpansionMode","展开方式","选择一种：手动打开、随系统隐藏区打开，或悬停入口约半秒。",["手动展开","跟随系统隐藏区","悬停入口"],settings.FollowNativeOverflow?1:settings.HoverToOpen?2:0,index=>{settings.ChangeBehavior(index==1,index==2,settings.MatchPanelMaterials);if(expansionOrderRow!=null)expansionOrderRow.Visible=index==1;}));
+            expansionOrderRow=ChoiceRow("NativeExpansionOrder","出场顺序","同时：一起出现。先后：等系统面板展开完，再出现收纳面板。",["同时","先后"],(int)settings.ExpansionOrder,index=>settings.ChangeExpansionOrder((NativeExpansionOrder)index));
+            expansionOrderRow.Name="ExpansionOrderRow";expansionOrderRow.Visible=settings.FollowNativeOverflow;Add(expansionOrderRow);
             Add(new Label{Text="拖动图标靠近入口时，仍会自动展开。",ForeColor=muted,AutoSize=true,MaximumSize=new Size(570,0)});
             Add(Heading("启动"));
             bool enabled=false;string detail="登录 Windows 后自动运行 TrayNest。";

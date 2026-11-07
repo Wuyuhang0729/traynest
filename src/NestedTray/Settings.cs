@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Win32;
 
 namespace NestedTray;
+internal enum NativeExpansionOrder{Simultaneous,AfterNative}
 internal sealed class Settings
 {
     public List<string> Collected {get;set;}=new();
@@ -13,6 +14,7 @@ internal sealed class Settings
     public bool FollowNativeOverflow {get;set;}
     public bool HoverToOpen {get;set;}
     public bool MatchPanelMaterials {get;set;}
+    public NativeExpansionOrder ExpansionOrder {get;set;}=NativeExpansionOrder.Simultaneous;
     internal Action? BeforeSave;
     internal static string DirectoryPath=>Environment.GetEnvironmentVariable("NESTEDTRAY_TEST_PROFILE")??Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"NestedTray");
     internal static string FilePath=>Path.Combine(DirectoryPath,"settings.json");
@@ -27,6 +29,7 @@ internal sealed class Settings
             value.Columns=Math.Clamp(value.Columns,5,8);
             if(!Enum.IsDefined(value.Placement))value.Placement=PopupPlacement.Left;
             if(!Enum.IsDefined(value.Appearance))value.Appearance=PanelAppearance.FollowSystem;
+            if(!Enum.IsDefined(value.ExpansionOrder))value.ExpansionOrder=NativeExpansionOrder.Simultaneous;
             if(value.FollowNativeOverflow&&value.HoverToOpen)value.HoverToOpen=false;
             value.Collected=value.Collected.Distinct(StringComparer.Ordinal).ToList();
             value.Tools=value.Tools.Where(tool=>value.Collected.Contains(tool.Rule)).DistinctBy(tool=>tool.Rule).ToList();return value;
@@ -62,6 +65,8 @@ internal sealed class Settings
         (FollowNativeOverflow,HoverToOpen,MatchPanelMaterials)=(follow,hover,match);
         try{Save();}catch{(FollowNativeOverflow,HoverToOpen,MatchPanelMaterials)=previous;throw;}
     }
+    internal void ChangeExpansionOrder(NativeExpansionOrder value)
+    {var previous=ExpansionOrder;ExpansionOrder=value;try{Save();}catch{ExpansionOrder=previous;throw;}}
     internal static bool StartupEnabled
     {
         get=>StartupRegistration.Enabled;

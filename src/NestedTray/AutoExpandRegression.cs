@@ -17,6 +17,7 @@ internal static class AutoExpandRegression
             NativeOverflow.TryOpen(app.Bridge.ExplorerWindow);Pump(1000);
             checks["NativeOpenAutomaticallyOpensPanel"]=app.Panel.Visible;
             var surface=NativeOverflow.SurfaceBounds(NativeOverflow.Window,(int)Math.Round(4*app.Panel.DeviceDpi/96.0));
+            File.WriteAllText(Path.Combine(root,"first-entrance-geometry.json"),JsonSerializer.Serialize(new{Panel=app.Panel.Bounds.ToString(),Surface=surface.ToString(),app.Panel.IsAnimating,Geometry=app.Panel.PresentationGeometry},DiagnosticStore.JsonOptions));
             checks["FollowOpenSettlesAtNativeBottom"]=app.Panel.Bottom==surface.Bottom;
             app.Entry.Open?.Invoke();Pump(900);
             checks["ManualCloseStaysClosed"]=!app.Panel.Visible;

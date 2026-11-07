@@ -1,5 +1,5 @@
 {
-  "version": "0.2.0-preview.12",
+  "version": "0.2.0-preview.13",
   "created": "2026-11-07",
   "sections": [
     [
@@ -61,7 +61,7 @@
   "compactSections": [
     [
       "organize-detail",
-      "拖进来，排顺手",
+      "自由拖动排序",
       "拖入收纳，拖动排序，拖出移回。"
     ],
     [
@@ -71,7 +71,7 @@
     ],
     [
       "expansion-detail",
-      "展开方式，三选一",
+      "展开方式自由选择",
       "手动、跟随隐藏区或悬停入口。"
     ],
     [
@@ -81,7 +81,7 @@
     ],
     [
       "interaction-detail",
-      "原来的操作，照常使用",
+      "不改变图标使用方式",
       "单击、双击和右键菜单。"
     ],
     [
@@ -90,5 +90,5 @@
       "左侧或上方，按边缘对齐。"
     ]
   ],
-  "overview": "README uses four small, single-purpose images; launch boards remain archived in this project."
+  "overview": "README uses six small, single-purpose images; launch boards remain archived in this project."
 }

@@ -6,7 +6,11 @@
 
 完整功能介绍另补 interaction-detail 与 placement-detail 两张同尺寸小图，分别展示原软件交互和左右/上方位置。设置、列数、指定启动文件、开机启动、正常退出恢复、移回全部和诊断用简短功能表补全，不将本次新增功能当成软件的全部能力。
 
-小图继续使用当前生产控件与同一批公开图标。展开方式图只聚焦真实下拉框，其他选项作为画外说明列出；材质图只展示一组对应外观，不重复制作大幅多场景说明。index.html 同步采用紧凑的功能卡片布局。
+小图继续使用当前生产控件与同一批公开图标。展开方式图采用简洁文字说明；材质图只展示一组对应外观，不重复制作大幅多场景说明。index.html 同步采用紧凑的功能卡片布局。
+
+根据最新截图反馈，展开方式改为纯文字，不再放大下拉框；六张小图各增加阴影边缘，并将短说明合成为浅色小字。小图最终1600×770源尺寸，README仍按360像素宽显示。材质图改为带蓝紫粉渐变背景的亚克力示意，位置图的两组原生面板处于同一基线。主视觉补充可编辑聚光图层，任务栏横贯画面。
+
+静态控件素材来自同日preview.12的隔离生产捕获；preview.13修改动画与出场顺序，不改变这些面板中的图标排布。新增出场顺序以文字说明，不伪造旧设置截图。
 
 ## 输出
 
@@ -42,3 +46,11 @@ capture/ReadmeCaptureV2.csproj 直接编译 src/NestedTray 当前生产控件。
 沿用已冻结的公开软件标识，仅转换格式，不重新绘制第三方标识。来源见 [常用图标来源](../review/SOURCES.md)、[补充来源](../review/personas/说明与来源.md)及[旧版制作说明](../CREDITS.md)。本轮使用的 PNG 独立保存在 assets/。
 
 这些名称和标识属于各自作者，仅为产品演示，不代表合作、背书或逐项兼容认证。TrayNest 标识沿用本项目正式几何图标，本次没有更换品牌标识。
+
+## 暗场主视觉修订
+
+主图改用 layers/background-dark-ai.png 的暗色摄影棚背景，压低环境亮度，以右侧聚光突出产品。两块产品面板以背景模糊、半透明色层和清晰边缘表现亚克力；这是材质示意，不是实际桌面录屏。面板底边与任务栏相距约14像素，系统隐藏区中心与几何绘制的 ^ 中心一致。产品界面、标识与文字仍分层组合，不由生成图重绘。
+
+暗色背景基于原无文字背景，通过内置 image_gen 编辑生成，提示词：
+
+> Edit this BACKGROUND-ONLY studio plate. Preserve wide landscape 16:10 framing, curved plinth lower right, glass planes far right, large clean left. Essential change DARK STUDIO low ambient; whole left 55% deep midnight navy nearly black #071120–#102037; only center-right about 70%, 50% concentrated soft cool white spotlight above with luminous pool/falloff; cyan rim; dark slate plinth restricted reflection; left flat dark for white type; no text/logos/UI/icons/people/device/watermark.

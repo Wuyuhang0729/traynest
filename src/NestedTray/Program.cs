@@ -6,6 +6,8 @@ internal static class Program
 {
     [STAThread]private static int Main(string[] args)
     {
+        if(args.Length==2&&args[0]=="--self-test-presentation")
+        {Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);return PresentationRegression.Run(args[1]);}
         if(args.Length==2&&args[0]=="--self-test-material-settings")
         {Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);return MaterialSettingsRegression.Run(args[1]);}
         if(args.Length==2&&args[0]=="--self-test-native-material")
@@ -120,6 +122,8 @@ internal sealed class TrayApplication:ApplicationContext
     private Point down;
     private bool stopping;
     private readonly AutoExpand autoExpand=new();
+    private readonly NativePanelGeometry nativeGeometry=new();
+    private bool refreshPanelPending;
     private readonly NativeMaterialController nativeMaterial=new();
     private bool updatingMaterial;
     private bool changingMaterialSettings;
@@ -147,6 +151,7 @@ internal sealed class TrayApplication:ApplicationContext
             entry.SettingsRequested=()=>Guard(ShowSettings);
             if(testMode)bridge.AllowedOwners=new();
             panel.UseSavedOrder=true;panel.FixedColumns=settings.Columns;
+            panel.NativeGeometry=nativeGeometry;
             panel.ToolStatus=launcher.Status;
             bridge.Changed+=()=>Guard(RefreshPanel);
             panel.Reordered=(record,index)=>Guard(()=>{library.Reorder(record.Rule,index);RefreshPanel();});
@@ -160,7 +165,7 @@ internal sealed class TrayApplication:ApplicationContext
                 var problem=AppDiagnostics.Error(code,error);Stop();if(DiagnosticUi.OpenWindows==0)DiagnosticUi.Show(problem);
             }));
             bridge.Bounds=record=>panel.CellBounds(record);
-            entry.Open=()=>{autoExpand.SuppressCurrentCycle(NativeOverflow.Visible);UpdateEntryBounds();if(panel.Visible&&!panel.IsDismissing)panel.Dismiss();else panel.Open();};
+            entry.Open=()=>{autoExpand.SuppressCurrentCycle(NativeOverflow.Visible);UpdateEntryBounds();if(panel.WantsVisible)panel.Dismiss();else panel.Open();};
             entry.Menu=()=>ShowMenu();
             // The standard refresh broadcast also reaches this window, so restart detection
             // is based on the actual Explorer handle rather than the message alone.
@@ -186,7 +191,7 @@ internal sealed class TrayApplication:ApplicationContext
             finishDrag.Tick+=(_,_)=>CompleteNativeDrop();
             panel.RemoveIcon=record=>Guard(()=>{if(record.IsOffline){library.Forget(record.Rule);RefreshPanel();}else bridge.Restore(record);});panel.OpenMenu=ShowMenu;
             panel.DismissStarted=()=>{autoExpand.SuppressCurrentCycle(NativeOverflow.Visible);pairedWithOverflow=false;restoreOverflowUntil=0;contextIcon=null;};
-            panel.VisibleChanged+=(_,_)=>{pairedWithOverflow=false;ignoreNativeCloseForPanelInteraction=false;panelOpenedUntil=Environment.TickCount64+700;if(!panel.Visible){restoreOverflowUntil=0;contextIcon=null;}};
+            panel.VisibleChanged+=(_,_)=>{pairedWithOverflow=panel.Visible&&NativeOverflow.Visible;ignoreNativeCloseForPanelInteraction=false;panelOpenedUntil=Environment.TickCount64+700;if(!panel.Visible){restoreOverflowUntil=0;contextIcon=null;}};
             BuildMenu();bridge.Start();panel.TaskbarWindow=bridge.ExplorerWindow;chevronBounds=NativeOverflow.ChevronBounds(bridge.ExplorerWindow);
             AppDiagnostics.State=DiagnosticState;
             if(!panel.CoreDrop.Registered)AppDiagnostics.Warn("TN1102");
@@ -195,6 +200,13 @@ internal sealed class TrayApplication:ApplicationContext
             timer.Tick+=(_,_)=>
             {
                 if(bridge!=null&&!bridge.ExplorerAlive){Restart();return;}
+                nativeGeometry.Tick(!panel.IsAnimating&&candidate==null&&releasedCandidate==null&&!panel.IsReordering&&(Native.GetAsyncKeyState(1)&0x8000)==0);
+                if(panel.IsAnimating)
+                {
+                    if((Native.GetAsyncKeyState((int)Keys.Escape)&0x8000)!=0)panel.Dismiss();
+                    SyncOverflowVisibility();return;
+                }
+                if(refreshPanelPending){refreshPanelPending=false;RefreshPanel();}
                 bridge?.Maintain();if(bridge?.Reconnecting==true)return;
                 if(!testMode&&startupCheckpoints<2&&Environment.TickCount64-launchedAt>=(startupCheckpoints==0?5000:30000))
                 {
@@ -207,7 +219,7 @@ internal sealed class TrayApplication:ApplicationContext
                 bool escape=(Native.GetAsyncKeyState((int)Keys.Escape)&0x8000)!=0;
                 bool reorderEscape=panel.HandleReorderEscape(escape);
                 if(!reorderEscape&&escape&&!escapeWasDown&&menu.Visible)menu.Close(ToolStripDropDownCloseReason.Keyboard);
-                else if(!reorderEscape&&escape&&!escapeWasDown&&panel.Visible&&!cancelledDrag&&!IsContextSurface(Native.GetForegroundWindow()))panel.Dismiss();
+                else if(!reorderEscape&&escape&&!escapeWasDown&&(panel.Visible||panel.IsPreparing)&&!cancelledDrag&&!IsContextSurface(Native.GetForegroundWindow()))panel.Dismiss();
                 escapeWasDown=escape;
                 if(candidate!=null&&Native.GetCursorPos(out var point))
                 {
@@ -233,7 +245,7 @@ internal sealed class TrayApplication:ApplicationContext
         initialDragEnters=panel.ExternalDragEnters;initialDrops=panel.ExternalDrops;
         initialCoreEnters=panel.CoreDrop.Enters;initialCoreDrops=panel.CoreDrop.Drops;
         candidate=null;down=point;
-        if(panel.Visible&&nativeVisibleOnPress&&sourceRoot==bridge!.ExplorerWindow&&chevronBounds.Contains(point))
+        if((panel.Visible||panel.IsPreparing)&&nativeVisibleOnPress&&sourceRoot==bridge!.ExplorerWindow&&chevronBounds.Contains(point))
         {TraceDrag("native-chevron-close-start",new{BeforeNativeHidden=true});panel.Dismiss();return;}
         // Controls handle their own MouseDown synchronously. The hook's queued copy
         // may arrive after MouseUp has opened a new application menu.
@@ -291,6 +303,7 @@ internal sealed class TrayApplication:ApplicationContext
     }
     private void SyncOverflowVisibility()
     {
+        if(panel.IsPreparing&&!NativeOverflow.Visible){panel.Dismiss();return;}
         if(!panel.Visible||panel.IsDismissing)return;
         long now=Environment.TickCount64;bool visible=NativeOverflow.Visible;
         nint foreground=Native.GetAncestor(Native.GetForegroundWindow(),2);
@@ -315,9 +328,11 @@ internal sealed class TrayApplication:ApplicationContext
             (Native.GetAsyncKeyState(1)&0x8000)!=0||(Native.GetAsyncKeyState(2)&0x8000)!=0||menu.Visible||offlineMenu.Visible||
             settingsWindow is {Visible:true,WindowState:not FormWindowState.Minimized}||DiagnosticUi.OpenWindows>0||HasContextPopup();
         bool overEntry=Native.GetCursorPos(out var pointer)&&panel.EntryRectangle.Contains(new Point(pointer.X,pointer.Y));
-        var reason=autoExpand.Evaluate(Environment.TickCount64,settings.FollowNativeOverflow,settings.HoverToOpen,nativeVisible,panel.Visible,overEntry,blocked);
+        var reason=autoExpand.Evaluate(Environment.TickCount64,settings.FollowNativeOverflow,settings.HoverToOpen,nativeVisible,panel.Visible||panel.IsPreparing,overEntry,blocked);
         if(reason==AutoExpandReason.None)return;
-        UpdateEntryBounds();panel.Open();
+        UpdateEntryBounds();
+        bool following=reason==AutoExpandReason.NativeOverflow;
+        panel.Open(waitForNative:following&&settings.ExpansionOrder==NativeExpansionOrder.AfterNative,simultaneous:following&&settings.ExpansionOrder==NativeExpansionOrder.Simultaneous);
         if(nativeVisible)pairedWithOverflow=true;
         TraceDrag("auto-expand",new{Reason=reason.ToString()});
     }
@@ -455,6 +470,8 @@ internal sealed class TrayApplication:ApplicationContext
     private void UpdateEntryBounds(){if(entry!=null){var rect=entry.Bounds;if(!rect.IsEmpty)panel.EntryRectangle=rect;}}
     private void RefreshPanel()
     {
+        if(panel.IsPreparing&&(!settings.FollowNativeOverflow||settings.ExpansionOrder!=NativeExpansionOrder.AfterNative))panel.Dismiss();
+        if(panel.IsAnimating){refreshPanelPending=true;return;}
         var records=bridge?.Icons.Values.ToArray()??[];
         if(library.EnsureEntries(records))settings.Save();
         var ordered=library.Snapshot(records);foreach(var record in ordered.Where(record=>!record.IsOffline))launcher.Registered(record.Rule);
@@ -554,7 +571,7 @@ internal sealed class TrayApplication:ApplicationContext
     {
         if(stopping)return;stopping=true;
         var last=AppDiagnostics.Snapshot();last["Stopped"]=true;AppDiagnostics.State=()=>last;
-        timer.Stop();discovery.Stop();finishDrag.Stop();nativeMaterial.Dispose();settingsWindow?.Close();
+        timer.Stop();discovery.Stop();finishDrag.Stop();nativeGeometry.Dispose();nativeMaterial.Dispose();settingsWindow?.Close();
         try{drag?.Dispose();}catch(Exception error){AppDiagnostics.Error("TN9001",error);}
         bool bridgeStopped=true;
         try{bridge?.Dispose();}catch(Exception error){bridgeStopped=false;AppDiagnostics.Error("TN6001",error);}

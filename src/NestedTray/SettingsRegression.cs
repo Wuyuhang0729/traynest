@@ -15,6 +15,10 @@ internal static class SettingsRegression
             checks["MissingProcessReturnsEmptyPath"]=ProcessExecutable.Read(int.MaxValue)=="";
             Directory.CreateDirectory(Settings.DirectoryPath);File.WriteAllText(Settings.FilePath,"{\"Collected\":[],\"Tools\":[]}");
             var settings=Settings.Load();checks["ExistingProfileDefaultsOff"]=!settings.FollowNativeOverflow&&!settings.HoverToOpen&&!settings.MatchPanelMaterials;
+            checks["ExistingProfilesKeepSimultaneousEntrance"]=settings.ExpansionOrder==NativeExpansionOrder.Simultaneous;
+            settings.ChangeExpansionOrder(NativeExpansionOrder.AfterNative);checks["ExpansionOrderPersists"]=Settings.Load().ExpansionOrder==NativeExpansionOrder.AfterNative;
+            settings.BeforeSave=()=>throw new IOException("Controlled order save failure");bool orderFailed=false;try{settings.ChangeExpansionOrder(NativeExpansionOrder.Simultaneous);}catch(TrayNestException){orderFailed=true;}
+            checks["ExpansionOrderSaveFailureRollsBack"]=orderFailed&&settings.ExpansionOrder==NativeExpansionOrder.AfterNative;settings.BeforeSave=null;
             File.WriteAllText(Settings.FilePath,"{\"Collected\":[],\"Tools\":[],\"FollowNativeOverflow\":true,\"HoverToOpen\":true}");
             var legacy=Settings.Load();checks["LegacyConflictingModesNormalizeToFollow"]=legacy.FollowNativeOverflow&&!legacy.HoverToOpen;
             foreach(bool follow in new[]{false,true})foreach(bool hover in new[]{false,true})foreach(bool match in new[]{false,true})
@@ -42,7 +46,9 @@ internal static class SettingsRegression
             window.Show();Pump(150);
             checks["IndependentTaskbarWindow"]=window.ShowInTaskbar&&!window.TopMost&&window.FormBorderStyle==FormBorderStyle.Sizable;
             var expansion=window.Controls.Find("ExpansionMode",true).OfType<ComboBox>().Single();
+            checks["ExpansionOrderVisibleForFollowOnly"]=window.Controls.Find("ExpansionOrderRow",true).Single().Visible;
             expansion.SelectedIndex=2;checks["WindowControlPersistsExclusiveHover"]=!Settings.Load().FollowNativeOverflow&&Settings.Load().HoverToOpen;
+            checks["ExpansionOrderHiddenForHover"]=!window.Controls.Find("ExpansionOrderRow",true).Single().Visible;
             settings.BeforeSave=()=>throw new IOException("Controlled UI save failure");expansion.SelectedIndex=1;
             checks["WindowControlFailureRestoresMode"]=expansion.SelectedIndex==2&&!Settings.Load().FollowNativeOverflow;settings.BeforeSave=null;
             foreach(int page in new[]{0,1,2}){window.SelectPage(page);Pump(100);using var bitmap=new Bitmap(window.Width,window.Height);window.DrawToBitmap(bitmap,new Rectangle(Point.Empty,bitmap.Size));bitmap.Save(Path.Combine(root,$"settings-{page}.png"));}
