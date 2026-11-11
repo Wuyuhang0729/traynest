@@ -1,5 +1,8 @@
 using System.Diagnostics;
-using System.Drawing.Drawing2D;
+using System.Text.Json;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.WinForms;
+using Microsoft.Win32;
 
 namespace NestedTray;
 
@@ -9,141 +12,141 @@ internal sealed class SettingsWindow:Form
     private readonly Action changed;
     private readonly Func<bool> readStartup;
     private readonly Action<bool> writeStartup;
-    private readonly Panel content=new(){Dock=DockStyle.Fill,AutoScroll=true,Padding=new Padding(32,24,32,20)};
-    private readonly Label status=new(){Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,Padding=new Padding(32,0,20,0),AutoEllipsis=true};
-    private readonly List<Button> navigation=[];
-    private readonly Color accent=Color.FromArgb(24,98,211),muted=Color.FromArgb(99,110,128);
-    private readonly List<Font> ownedFonts=[];
-    private int page;
-    private Control? expansionOrderRow;
+    private WebView2 browser=new(){Dock=DockStyle.Fill};
+    private readonly Label loading=new(){Dock=DockStyle.Fill,Text="正在打开设置…",TextAlign=ContentAlignment.MiddleCenter};
+    private bool started,operationInProgress;
+    private int page=1;
+    private string? pendingStatus;
+    private bool pendingError;
+    internal bool IsReady{get;private set;}
+    internal string? InitializationError{get;private set;}
+    internal bool RecordingShortcut{get;private set;}
     internal Action? OpenDiagnostics;
     internal Action? OpenPanelRequested,RefreshIconsRequested,RestoreAllRequested,ExitRequested;
+    internal Action<string>? UpdateRequested;
+    internal Func<UpdateView>? ReadUpdate;
+    internal void RefreshUpdate()=>Post(new{type="update",value=ReadUpdate?.Invoke()});
     internal Func<bool,Task>? ChangeMaterialSync;
-    internal void ShowOperationStatus(string text,bool error=false){status.Text=text;status.ForeColor=error?Color.Firebrick:muted;}
-    internal void RefreshValues()=>SelectPage(page);
+    internal Action<Keys,bool>? ChangeShortcut;
+    internal WebView2 Browser=>browser;
     internal SettingsWindow(Settings settings,Action changed,Func<bool> readStartup,Action<bool> writeStartup)
     {
         this.settings=settings;this.changed=changed;this.readStartup=readStartup;this.writeStartup=writeStartup;
         Text="TrayNest 设置";Name="TrayNestSettings";Icon=AppIcon.Load();StartPosition=FormStartPosition.CenterScreen;
-        AutoScaleMode=AutoScaleMode.Dpi;AutoScaleDimensions=new SizeF(96,96);ClientSize=new Size(920,680);MinimumSize=new Size(760,570);
-        Font=OwnFont(10);BackColor=Color.FromArgb(246,248,251);ForeColor=Color.FromArgb(26,35,50);
-        var shell=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,RowCount=2,Margin=Padding.Empty};
-        shell.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,196));shell.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
-        shell.RowStyles.Add(new RowStyle(SizeType.Percent,100));shell.RowStyles.Add(new RowStyle(SizeType.Absolute,46));
-        var side=new Panel{Dock=DockStyle.Fill,BackColor=Color.FromArgb(235,240,247),Padding=new Padding(20),Margin=Padding.Empty};
-        var brand=new Label{Text="TrayNest",Font=OwnFont(21,FontStyle.Bold),Location=new Point(16,30),AutoSize=true};side.Controls.Add(brand);
-        var subtitle=new Label{Text="按你的习惯，安排图标",ForeColor=muted,Location=new Point(20,76),AutoSize=true};side.Controls.Add(subtitle);
-        string[] names=["常规","面板","关于"];
-        for(int i=0;i<names.Length;i++)
-        {
-            int target=i;var button=new Button{Text=names[i],Name="Nav"+i,AccessibleName=names[i],FlatStyle=FlatStyle.Flat,TextAlign=ContentAlignment.MiddleLeft,Padding=new Padding(14,0,0,0),Bounds=new Rectangle(12,136+i*54,172,44),Anchor=AnchorStyles.Top|AnchorStyles.Left|AnchorStyles.Right,Cursor=Cursors.Hand};
-            button.FlatAppearance.BorderSize=0;button.Click+=(_,_)=>SelectPage(target);side.Controls.Add(button);navigation.Add(button);
-        }
-        var exit=new Button{Text="退出 TrayNest",Name="ExitApplication",AccessibleName="退出 TrayNest",Dock=DockStyle.Bottom,Height=38,FlatStyle=FlatStyle.Flat,Cursor=Cursors.Hand};
-        exit.FlatAppearance.BorderColor=Color.FromArgb(201,211,225);exit.Click+=(_,_)=>ExitRequested?.Invoke();side.Controls.Add(exit);
-        shell.Controls.Add(side,0,0);shell.SetRowSpan(side,2);shell.Controls.Add(content,1,0);shell.Controls.Add(status,1,1);Controls.Add(shell);
-        Shown+=(_,_)=>{var work=Screen.FromControl(this).WorkingArea;if(Width>work.Width||Height>work.Height){MinimumSize=Size.Empty;Size=new Size(Math.Min(Width,work.Width-24),Math.Min(Height,work.Height-24));CenterToScreen();}};
-        SelectPage(0);
+        AutoScaleMode=AutoScaleMode.Dpi;AutoScaleDimensions=new SizeF(96,96);ClientSize=new Size(1020,632);MinimumSize=new Size(760,570);
+        Font=SystemFonts.MessageBoxFont;Controls.Add(browser);Controls.Add(loading);loading.BringToFront();ApplyFrameTheme();
+        Shown+=async(_,_)=>{if(!started)await InitializeAsync();};
+        Deactivate+=(_,_)=>RecordingShortcut=false;
     }
-    private Font OwnFont(float size,FontStyle style=FontStyle.Regular){var existing=ownedFonts.FirstOrDefault(font=>font.Size==size&&font.Style==style);if(existing!=null)return existing;var font=new Font("Microsoft YaHei UI",size,style);ownedFonts.Add(font);return font;}
-    internal void SelectPage(int index)
+    private static string Resource(string name)
+    {using var stream=typeof(SettingsWindow).Assembly.GetManifestResourceStream("NestedTray.Settings."+name)??throw new InvalidOperationException("Missing settings resource: "+name);using var reader=new StreamReader(stream);return reader.ReadToEnd();}
+    internal static string Document()
     {
-        expansionOrderRow=null;
-        page=index;
-        foreach(var button in navigation){bool active=navigation.IndexOf(button)==page;button.BackColor=active?Color.FromArgb(215,230,252):Color.FromArgb(235,240,247);button.ForeColor=active?accent:ForeColor;}
-        content.SuspendLayout();foreach(Control control in content.Controls.Cast<Control>().ToArray())control.Dispose();content.Controls.Clear();content.AutoScrollPosition=Point.Empty;
-        var stack=new TableLayoutPanel{Dock=DockStyle.Top,AutoSize=true,ColumnCount=1,Margin=Padding.Empty};stack.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
-        void Add(Control control){control.Margin=new Padding(0,0,0,14);control.Dock=DockStyle.Top;stack.Controls.Add(control);}
-        Add(new Label{Text=new[]{"常规","面板","关于 TrayNest"}[page],AutoSize=true,Font=OwnFont(25,FontStyle.Bold)});
-        Add(new Label{Text=new[]{"决定什么时候展开，以及如何启动。","位置、布局和材质，放在一起调整。","给系统隐藏区，再添一个自选空间。"}[page],AutoSize=true,ForeColor=muted,Padding=new Padding(0,0,0,12)});
-        if(page==0)
+        using var icon=AppIcon.Load();using var bitmap=icon.ToBitmap();using var buffer=new MemoryStream();bitmap.Save(buffer,System.Drawing.Imaging.ImageFormat.Png);
+        return Resource("index.html").Replace("{{DAISY}}",Resource("daisyui.css")).Replace("{{STYLE}}",Resource("styles.css")).Replace("{{SCRIPT}}",Resource("app.js")).Replace("{{ICON}}","data:image/png;base64,"+Convert.ToBase64String(buffer.ToArray()));
+    }
+    private async Task InitializeAsync()
+    {
+        started=true;InitializationError=null;
+        try
         {
-            Add(Heading("自动展开"));
-            Add(ChoiceRow("ExpansionMode","展开方式","选择一种：手动打开、随系统隐藏区打开，或悬停入口约半秒。",["手动展开","跟随系统隐藏区","悬停入口"],settings.FollowNativeOverflow?1:settings.HoverToOpen?2:0,index=>{settings.ChangeBehavior(index==1,index==2,settings.MatchPanelMaterials);if(expansionOrderRow!=null)expansionOrderRow.Visible=index==1;}));
-            expansionOrderRow=ChoiceRow("NativeExpansionOrder","出场顺序","同时：一起出现。先后：等系统面板展开完，再出现收纳面板。",["同时","先后"],(int)settings.ExpansionOrder,index=>settings.ChangeExpansionOrder((NativeExpansionOrder)index));
-            expansionOrderRow.Name="ExpansionOrderRow";expansionOrderRow.Visible=settings.FollowNativeOverflow;Add(expansionOrderRow);
-            Add(new Label{Text="拖动图标靠近入口时，仍会自动展开。",ForeColor=muted,AutoSize=true,MaximumSize=new Size(570,0)});
-            Add(Heading("启动"));
-            bool enabled=false;string detail="登录 Windows 后自动运行 TrayNest。";
-            try{enabled=readStartup();}catch{detail="暂时无法读取启动状态，请稍后重试。";}
-            Add(ToggleRow("StartupEnabled","开机启动",detail,enabled,value=>writeStartup(value)));
-            Add(Heading("应用操作"));
-            Add(ActionRow("打开收纳面板","查看已收纳的图标",()=>OpenPanelRequested?.Invoke()));
-            Add(ActionRow("刷新图标","重新获取正在运行的软件图标",()=>RefreshIconsRequested?.Invoke()));
+            var environment=await CoreWebView2Environment.CreateAsync(null,Path.Combine(Settings.DirectoryPath,"settings-webview"));
+            if(IsDisposed)return;
+            await browser.EnsureCoreWebView2Async(environment);
+            if(IsDisposed)return;
+            var core=browser.CoreWebView2;
+            core.Settings.AreDevToolsEnabled=false;core.Settings.AreDefaultContextMenusEnabled=false;core.Settings.AreBrowserAcceleratorKeysEnabled=false;core.Settings.IsStatusBarEnabled=false;core.Settings.AreDefaultScriptDialogsEnabled=false;core.Settings.IsGeneralAutofillEnabled=false;core.Settings.IsPasswordAutosaveEnabled=false;
+            SetBrowserTheme();
+            bool initialDocument=true;
+            core.NavigationStarting+=(_,e)=>{if(initialDocument&&e.Uri.StartsWith("data:text/html;charset=utf-8;base64,",StringComparison.Ordinal)){initialDocument=false;return;}e.Cancel=true;};
+            core.NewWindowRequested+=(_,e)=>e.Handled=true;
+            core.DownloadStarting+=(_,e)=>e.Cancel=true;
+            core.PermissionRequested+=(_,e)=>e.State=CoreWebView2PermissionState.Deny;
+            core.AddWebResourceRequestedFilter("*",CoreWebView2WebResourceContext.All);
+            core.WebResourceRequested+=(_,e)=>{if(Uri.TryCreate(e.Request.Uri,UriKind.Absolute,out var uri)&&uri.Scheme is "http" or "https")e.Response=environment.CreateWebResourceResponse(null,403,"Blocked","");};
+            core.NavigationCompleted+=(_,e)=>{if(!e.IsSuccess&&!IsDisposed){InitializationError="Navigation: "+e.WebErrorStatus;ShowLoadFailure("设置界面未能加载，请重试。");}};
+            // Leave the WebView event before opening native dialogs or closing the browser.
+            core.WebMessageReceived+=(_,e)=>{string source=e.Source,json=e.WebMessageAsJson;if(!IsDisposed)BeginInvoke((Action)(()=>OnMessage(source,json)));};
+            core.ProcessFailed+=(_,_)=>{IsReady=false;ShowLoadFailure("设置界面进程已退出，请重试。");};
+            browser.NavigateToString(Document());
         }
-        else if(page==1)
+        catch(Exception error){if(IsDisposed)return;InitializationError=error.Message;AppDiagnostics.Error("TN4001",error);ShowLoadFailure("设置界面未能加载，请重试。请确认 Microsoft Edge WebView2 Runtime 可用。");}
+    }
+    private void ShowLoadFailure(string text)
+    {
+        if(IsDisposed)return;IsReady=false;loading.Text=text;loading.Visible=true;loading.BringToFront();
+        if(Controls.Find("RetrySettings",false).Length>0)return;
+        var quit=new Button{Name="ExitApplication",Text="退出 TrayNest",Size=new Size(112,34),Anchor=AnchorStyles.Bottom|AnchorStyles.Left,Location=new Point(22,ClientSize.Height-56)};quit.Click+=(_,_)=>ExitRequested?.Invoke();Controls.Add(quit);quit.BringToFront();
+        var retry=new Button{Name="RetrySettings",Text="重试",Size=new Size(86,34),Anchor=AnchorStyles.Bottom|AnchorStyles.Right,Location=new Point(ClientSize.Width-110,ClientSize.Height-56)};
+        retry.Click+=async(_,_)=>{Controls.Remove(retry);retry.Dispose();Controls.Remove(quit);quit.Dispose();Controls.Remove(browser);browser.Dispose();browser=new WebView2{Dock=DockStyle.Fill};Controls.Add(browser);ApplyFrameTheme();await InitializeAsync();};Controls.Add(retry);retry.BringToFront();
+    }
+    private void SetBrowserTheme()
+    {if(browser.CoreWebView2!=null)browser.CoreWebView2.Profile.PreferredColorScheme=settings.SettingsTheme switch{SettingsTheme.Light=>CoreWebView2PreferredColorScheme.Light,SettingsTheme.Dark=>CoreWebView2PreferredColorScheme.Dark,_=>CoreWebView2PreferredColorScheme.Auto};}
+    private void ApplyFrameTheme(bool? actualDark=null)
+    {
+        bool systemDark=false;try{using var key=Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");systemDark=key?.GetValue("AppsUseLightTheme") is int value&&value==0;}catch{}
+        bool dark=actualDark??(settings.SettingsTheme==SettingsTheme.Dark||settings.SettingsTheme==SettingsTheme.System&&systemDark);
+        BackColor=dark?Color.FromArgb(28,29,32):Color.White;ForeColor=dark?Color.Gainsboro:Color.FromArgb(41,52,68);browser.DefaultBackgroundColor=BackColor;
+        if(IsHandleCreated){int enabled=dark?1:0;Native.DwmSetWindowAttribute(Handle,20,ref enabled,sizeof(int));}
+    }
+    protected override void OnHandleCreated(EventArgs e){base.OnHandleCreated(e);ApplyFrameTheme();}
+    private void Post(object message){if(IsDisposed||!IsReady||browser.CoreWebView2==null)return;try{browser.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(message));}catch(InvalidOperationException){}}
+    internal void SelectPage(int index){page=Math.Clamp(index,0,3);Post(new{type="page",value=page});}
+    internal void RefreshValues(){SendSnapshot();}
+    private void SendSnapshot()
+    {
+        bool startup=false,available=true;try{startup=readStartup();}catch{available=false;}
+        Post(new{type="snapshot",value=new{settings.SettingsTheme,settings.OpeningMode,settings.FollowNativeOverflow,settings.HoverToOpen,settings.ExpansionOrder,settings.Columns,settings.Placement,settings.Appearance,settings.MatchPanelMaterials,settings.BlankCellOpens,settings.ShortcutBothPanels,settings.AutoCheckUpdates,settings.ImportantUpdateReminders,Update=ReadUpdate?.Invoke(),Shortcut=(int)settings.Shortcut,ShortcutDisplay=GlobalShortcut.Display(settings.Shortcut),StartupEnabled=startup,StartupAvailable=available,Version=Application.ProductVersion.Split('+')[0]}});
+    }
+    internal void ShowOperationStatus(string text,bool error=false){pendingStatus=text;pendingError=error;Post(new{type="status",text,error});}
+    private static int Integer(JsonElement value,int min,int max){if(!value.TryGetInt32(out int number)||number<min||number>max)throw new ArgumentException("设置值无效。");return number;}
+    private static bool Boolean(JsonElement value)=>value.ValueKind switch{JsonValueKind.True=>true,JsonValueKind.False=>false,_=>throw new ArgumentException("设置值无效。")};
+    private void ApplyShortcut(Keys key,bool both){if(!GlobalShortcut.Valid(key))throw new ShortcutException("请选择有效的组合键。");if(ChangeShortcut==null)throw new ShortcutException("快捷键服务尚未就绪。");ChangeShortcut(key,both);}
+    private async void OnMessage(string source,string json)
+    {
+        if(IsDisposed||source!="about:blank")return;
+        try
         {
-            Add(Heading("排列"));
-            Add(ChoiceRow("Placement","展开位置","相对于系统隐藏区的位置。",["左侧","上方"],settings.Placement==PopupPlacement.Left?0:1,index=>settings.ChangePlacement(index==0?PopupPlacement.Left:PopupPlacement.Above)));
-            Add(ChoiceRow("Columns","每行图标数","按收纳数量和屏幕空间调整。",["5 个","6 个","7 个","8 个"],settings.Columns-5,index=>{int previous=settings.Columns;settings.Columns=index+5;try{settings.Save();}catch{settings.Columns=previous;throw;}}));
-            Add(Heading("材质与颜色"));
-            Add(ChoiceRow("Appearance","收纳面板外观","亚克力效果会保留背景的模糊与透光。",["跟随系统托盘","亚克力","浅色","深色"],(int)settings.Appearance,index=>settings.ChangeAppearance((PanelAppearance)index)));
-            var material=new SettingsToggle{Name="MatchPanelMaterials",AccessibleName="统一两个面板的材质",Checked=settings.MatchPanelMaterials};bool resetting=false;
-            material.CheckedChanged+=async(_,_)=>
+            using var document=JsonDocument.Parse(json);var root=document.RootElement;string? op=root.GetProperty("op").GetString();var value=root.GetProperty("value");
+            if(op=="ready"){IsReady=true;loading.Hide();SendSnapshot();SelectPage(page);if(pendingStatus!=null)ShowOperationStatus(pendingStatus,pendingError);return;}
+            if(op=="themeApplied"){ApplyFrameTheme(Boolean(value));return;}
+            if(op=="recordShortcut"){RecordingShortcut=Boolean(value);return;}
+            if(operationInProgress)return;operationInProgress=true;
+            try
             {
-                if(resetting)return;bool requested=material.Checked;material.Enabled=false;ShowOperationStatus("正在应用主面板材质…");
-                try{if(ChangeMaterialSync==null)throw new NativeMaterialException("材质组件尚未准备好。");await ChangeMaterialSync(requested);if(!IsDisposed)ShowOperationStatus(requested?"已保存，两个面板的外观已同步":"已关闭，系统背景已恢复");}
-                catch(Exception error){if(!material.IsDisposed){resetting=true;material.Checked=settings.MatchPanelMaterials;resetting=false;}if(!IsDisposed)ShowOperationStatus(error is NativeMaterialException?error.Message:"未能保存，已保留原设置。",true);}
-                finally{if(!material.IsDisposed)material.Enabled=true;}
-            };
-            Add(Row("统一两个面板的材质","让系统隐藏区主面板采用相同外观；关闭后恢复系统背景。",material));
-            Add(Heading("收纳管理"));
-            Add(ActionRow("移回全部并清空收纳","恢复系统图标位置，并移除保存的收纳项目。",()=>RestoreAllRequested?.Invoke()));
+                bool hint=false;
+                switch(op)
+                {
+                    case "SettingsTheme":settings.ChangeSettingsTheme((SettingsTheme)Integer(value,0,2));SetBrowserTheme();ApplyFrameTheme();break;
+                    case "OpeningMode":settings.ChangeOpeningMode((OpeningMode)Integer(value,0,1));break;
+                    case "ExpansionMode":int mode=Integer(value,0,2);if(mode==1&&settings.OpeningMode!=OpeningMode.Linked)throw new ArgumentException("独立模式不跟随系统隐藏区。");settings.ChangeBehavior(mode==1,mode==2,settings.MatchPanelMaterials);break;
+                    case "NativeExpansionOrder":settings.ChangeExpansionOrder((NativeExpansionOrder)Integer(value,0,1));break;
+                    case "Columns":int oldColumns=settings.Columns;settings.Columns=Integer(value,5,8);try{settings.Save();}catch{settings.Columns=oldColumns;throw;}break;
+                    case "Placement":if(settings.OpeningMode!=OpeningMode.Linked)throw new ArgumentException("独立模式固定在入口上方。");settings.ChangePlacement((PopupPlacement)Integer(value,0,1));break;
+                    case "Appearance":settings.ChangeAppearance((PanelAppearance)Integer(value,0,3));break;
+                    case "Shortcut":ApplyShortcut((Keys)Integer(value,0,int.MaxValue),settings.ShortcutBothPanels);break;
+                    case "ShortcutTarget":ApplyShortcut(settings.Shortcut,!Boolean(value));break;
+                    case "StartupEnabled":writeStartup(Boolean(value));break;
+                    case "AutoCheckUpdates":settings.ChangeUpdatePreference(Boolean(value),settings.ImportantUpdateReminders);UpdateRequested?.Invoke("preferences");break;
+                    case "ImportantUpdateReminders":settings.ChangeUpdatePreference(settings.AutoCheckUpdates,Boolean(value));UpdateRequested?.Invoke("preferences");break;
+                    case "checkUpdate":case "downloadUpdate":case "installUpdate":case "cancelUpdate":case "releasePage":case "uninstall":UpdateRequested?.Invoke(op);return;
+                    case "BlankCellOpens":var previous=(settings.BlankCellOpens,settings.BlankCellHintSeen,settings.BlankCellHintVersion);settings.BlankCellOpens=Boolean(value);hint=settings.BlankCellOpens&&(!settings.BlankCellHintSeen||settings.BlankCellHintVersion<2);if(hint){settings.BlankCellHintSeen=true;settings.BlankCellHintVersion=2;}try{settings.Save();}catch{(settings.BlankCellOpens,settings.BlankCellHintSeen,settings.BlankCellHintVersion)=previous;throw;}break;
+                    case "MatchPanelMaterials":if(ChangeMaterialSync==null)throw new NativeMaterialException("材质组件尚未准备好。");ShowOperationStatus("正在应用主面板材质…");await ChangeMaterialSync(Boolean(value));break;
+                    case "openPanel":OpenPanelRequested?.Invoke();return;
+                    case "refreshIcons":RefreshIconsRequested?.Invoke();ShowOperationStatus("图标已刷新");return;
+                    case "restoreAll":RestoreAllRequested?.Invoke();SendSnapshot();return;
+                    case "blankHint":BlankCellHint.ShowFor(this);return;
+                    case "homepage":Process.Start(new ProcessStartInfo("https://github.com/Wuyuhang0729/traynest"){UseShellExecute=true});return;
+                    case "diagnostics":OpenDiagnostics?.Invoke();return;
+                    case "exit":ExitRequested?.Invoke();return;
+                    default:throw new ArgumentException("不支持的设置操作。");
+                }
+                if(op!="SettingsTheme")changed();SendSnapshot();ShowOperationStatus("已保存");if(hint)BlankCellHint.ShowFor(this);
+            }
+            catch(Exception error){AppDiagnostics.Error(error is TrayNestException known?known.Code:"TN4001",error);SendSnapshot();ShowOperationStatus(error is ShortcutException or NativeMaterialException?error.Message:"未能保存，已保留原设置。",true);}
+            finally{operationInProgress=false;}
         }
-        else
-        {
-            Add(Heading("TrayNest · 托盘收纳盒"));
-            Add(new Label{Text="版本 "+Application.ProductVersion.Split('+')[0]+"\n\n手动挑选图标，保留你习惯的顺序。\n布局和外观设置保存在当前用户目录。",AutoSize=true,ForeColor=muted});
-            Add(ActionRow("项目主页","使用说明、更新与源代码",()=>Process.Start(new ProcessStartInfo("https://github.com/Wuyuhang0729/traynest"){UseShellExecute=true})));
-            Add(ActionRow("诊断与反馈","查看或导出诊断报告",()=>OpenDiagnostics?.Invoke()));
-        }
-        content.Controls.Add(stack);content.ResumeLayout(true);
+        catch(Exception error)when(error is JsonException or KeyNotFoundException or InvalidOperationException or ArgumentException){AppDiagnostics.Warn("TN4001",error:error);SendSnapshot();ShowOperationStatus("未能应用这项设置，请重试。",true);}
     }
-    private Label Heading(string text)=>new(){Text=text,Font=OwnFont(11,FontStyle.Bold),AutoSize=true,Padding=new Padding(0,8,0,2)};
-    private TableLayoutPanel Row(string title,string description,Control input)
-    {
-        var row=new TableLayoutPanel{BackColor=Color.White,AutoSize=true,MinimumSize=new Size(0,90),ColumnCount=2,RowCount=1,Padding=new Padding(18,15,18,15)};
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,input is ComboBox?168:66));
-        var text=new TableLayoutPanel{AutoSize=true,Dock=DockStyle.Fill,ColumnCount=1,Margin=Padding.Empty};
-        text.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
-        text.Controls.Add(new Label{Text=title,Font=OwnFont(10,FontStyle.Bold),AutoSize=true,Margin=new Padding(0,0,10,7)});
-        var desc=new Label{Text=description,ForeColor=muted,AutoSize=true,Dock=DockStyle.Top,Margin=new Padding(0,0,12,0)};
-        text.SizeChanged+=(_,_)=>desc.MaximumSize=new Size(Math.Max(100,text.ClientSize.Width-12),0);text.Controls.Add(desc);
-        input.Anchor=AnchorStyles.Right;input.Margin=Padding.Empty;row.Controls.Add(text,0,0);row.Controls.Add(input,1,0);return row;
-    }
-    private Control ToggleRow(string name,string title,string description,bool current,Action<bool> apply)
-    {
-        var toggle=new SettingsToggle{Name=name,AccessibleName=title,Checked=current};bool syncing=false;
-        toggle.CheckedChanged+=(_,_)=>{if(syncing)return;if(!Save(()=>apply(toggle.Checked))){syncing=true;toggle.Checked=!toggle.Checked;syncing=false;}};
-        return Row(title,description,toggle);
-    }
-    private Control ChoiceRow(string name,string title,string description,string[] choices,int current,Action<int> apply)
-    {
-        var combo=new ComboBox{Name=name,AccessibleName=title,DropDownStyle=ComboBoxStyle.DropDownList,Width=160,FlatStyle=FlatStyle.Standard};combo.Items.AddRange(choices);combo.SelectedIndex=current;int previous=current;bool syncing=false;
-        combo.SelectedIndexChanged+=(_,_)=>{if(syncing)return;if(Save(()=>apply(combo.SelectedIndex)))previous=combo.SelectedIndex;else{syncing=true;combo.SelectedIndex=previous;syncing=false;}};
-        return Row(title,description,combo);
-    }
-    private Control ActionRow(string title,string description,Action action)
-    {var button=new Button{Text="打开",Width=64,Height=32,AccessibleName=title};button.Click+=(_,_)=>{try{action();}catch(Exception){status.ForeColor=Color.Firebrick;status.Text="未能打开，请稍后重试。";}};return Row(title,description,button);}
-    private bool Save(Action action)
-    {
-        try{action();changed();status.ForeColor=muted;status.Text="已保存，立即生效";return true;}
-        catch(Exception error){AppDiagnostics.Error(error is TrayNestException known?known.Code:"TN4001",error);status.ForeColor=Color.Firebrick;status.Text="未能保存，已保留原设置。";return false;}
-    }
-    protected override void Dispose(bool disposing){base.Dispose(disposing);if(disposing)foreach(var font in ownedFonts)font.Dispose();}
-}
-
-internal sealed class SettingsToggle:CheckBox
-{
-    internal SettingsToggle(){Size=new Size(52,28);FlatStyle=FlatStyle.Flat;Cursor=Cursors.Hand;SetStyle(ControlStyles.UserPaint|ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.ResizeRedraw,true);}
-    protected override void OnCheckedChanged(EventArgs e){base.OnCheckedChanged(e);Invalidate();}
-    protected override void OnPaint(PaintEventArgs e)
-    {
-        e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;
-        float scale=DeviceDpi/96f;var bounds=new RectangleF(1,1,Width-2,Height-2);float radius=bounds.Height;
-        using var path=new GraphicsPath();path.AddArc(bounds.X,bounds.Y,radius,radius,90,180);path.AddArc(bounds.Right-radius,bounds.Y,radius,radius,270,180);path.CloseFigure();
-        using var track=new SolidBrush(Enabled?(Checked?Color.FromArgb(24,98,211):Color.FromArgb(150,160,175)):SystemColors.ControlDark);e.Graphics.FillPath(track,path);
-        float diameter=Height-8*scale;using var knob=new SolidBrush(Color.White);e.Graphics.FillEllipse(knob,Checked?Width-diameter-4*scale:4*scale,4*scale,diameter,diameter);
-        if(Focused&&ShowFocusCues)ControlPaint.DrawFocusRectangle(e.Graphics,ClientRectangle);
-    }
+    protected override void Dispose(bool disposing){if(disposing){RecordingShortcut=false;IsReady=false;browser.Dispose();}base.Dispose(disposing);}
 }

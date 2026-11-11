@@ -5,6 +5,7 @@ using System.Text.Json;
 namespace NestedTray;
 internal static class PanelReorderRegression
 {
+    [DllImport("user32.dll")]private static extern nint GetTopWindow(nint window);
     internal static int Run(string directory)
     {
         Directory.CreateDirectory(directory);Environment.SetEnvironmentVariable("NESTEDTRAY_TEST_PROFILE",Path.Combine(directory,"profile"));
@@ -39,7 +40,13 @@ internal static class PanelReorderRegression
                 Drive(()=>
                 {
                     Native.SetCursorPos(from.X,from.Y);Thread.Sleep(60);Mouse(2);Thread.Sleep(60);
-                    for(int step=1;step<=10;step++){Native.SetCursorPos(from.X+(target.X-from.X)*step/10,from.Y+(target.Y-from.Y)*step/10);Thread.Sleep(30);}
+                                        bool top=true;int sampled=0;
+                    for(int step=1;step<=10;step++)
+                    {
+                        Native.SetCursorPos(from.X+(target.X-from.X)*step/10,from.Y+(target.Y-from.Y)*step/10);Thread.Sleep(30);
+                        panel.Invoke((Action)(()=>{if(panel.IsReordering){sampled++;top&=GetTopWindow(grid.Handle)==source.Handle;Capture("motion-"+rule.Replace('|','-')+"-"+step);}}));
+                    }
+                    panel.Invoke((Action)(()=>checks["ActiveTileOnTopDuringPhysicalDrag-"+rule]=sampled>0&&top));
                     Thread.Sleep(100);panel.Invoke(preview);
                     if(escape){Key(0x1B,false);Thread.Sleep(120);Key(0x1B,true);}
                     if(loseCapture)panel.Invoke((Action)(()=>source.Capture=false));
@@ -63,6 +70,25 @@ internal static class PanelReorderRegression
             Capture("after-reorder");
             var before=Order();string moving=before[0],targetRule=before[7];expected=before.ToList();expected.Remove(moving);expected.Insert(7,moving);
             Drag(moving,Center(Tile(targetRule)),()=>{});checks["CrossRowReorderPersists"]=Order().SequenceEqual(expected)&&Settings.Load().Tools.Select(tool=>tool.Rule).SequenceEqual(expected);
+            before=Order();var reversing=Tile(before[^1]);var origin=Center(reversing);bool allAbove=true;
+            Drive(()=>
+            {
+                Native.SetCursorPos(origin.X,origin.Y);Mouse(2);Thread.Sleep(60);
+                foreach(int destination in new[]{5,9,4,0,7,1})
+                {
+                    var endpoint=grid.PointToScreen(new Point(destination%5*40+20,destination/5*40+20));
+                    for(int step=1;step<=6;step++)
+                    {
+                        Native.SetCursorPos(origin.X+(endpoint.X-origin.X)*step/6,origin.Y+(endpoint.Y-origin.Y)*step/6);Thread.Sleep(25);
+                        panel.Invoke((Action)(()=>{if(panel.IsReordering)allAbove&=GetTopWindow(grid.Handle)==reversing.Handle;}));
+                    }
+                    origin=endpoint;
+                    panel.Invoke((Action)(()=>Capture("continuous-turn-"+destination)));
+                }
+                Key(0x1B,false);Thread.Sleep(100);Key(0x1B,true);Mouse(4);
+            });
+            checks["PhysicalHorizontalVerticalAndContinuousTurnsStayAbove"]=allAbove;
+            checks["ContinuousTurnsCancelRestoresSavedOrder"]=Order().SequenceEqual(before)&&Settings.Load().Tools.Select(tool=>tool.Rule).SequenceEqual(before);
             before=Order();expected=before.ToList();expected.Remove("reorder|8");expected.Insert(2,"reorder|8");
             Drag("reorder|8",Center(Tile(before[2])),()=>{});checks["OfflineToolCanReorder"]=Order().SequenceEqual(expected)&&Settings.Load().Tools.Select(tool=>tool.Rule).SequenceEqual(expected);
             before=Order();Drag(before[^1],Center(Tile(before[0])),()=>{},escape:true);

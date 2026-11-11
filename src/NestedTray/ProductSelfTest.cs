@@ -32,10 +32,10 @@ internal static class ProductSelfTest
             Wait(()=>
             {
                 OpenOverflow(app.Bridge.ExplorerWindow);
-                return FindIcon(app.Bridge.ExplorerWindow,"NestedTray product fixture")!=null&&FindIcon(app.Bridge.ExplorerWindow,"嵌套面板")!=null;
+                return FindIcon(app.Bridge.ExplorerWindow,"NestedTray product fixture")!=null&&FindIcon(app.Bridge.ExplorerWindow,"TrayNest · 托盘收纳盒")!=null;
             });
             var source=FindIcon(app.Bridge.ExplorerWindow,"NestedTray product fixture");
-            var entry=FindIcon(app.Bridge.ExplorerWindow,"嵌套面板");
+            var entry=FindIcon(app.Bridge.ExplorerWindow,"TrayNest · 托盘收纳盒");
             if(source==null||entry==null)throw new InvalidOperationException("Fixture or ordinary entry is not visible in native overflow.");
             // Regression: click to open normally, then return to the native overflow.
             // Preview mode would mask Deactivate dismissing the panel before a drag starts.
@@ -63,7 +63,7 @@ internal static class ProductSelfTest
             checks["EntryAccessibleBounds"]=entryBounds.ToString();
             if((Native.GetAsyncKeyState(1)&0x8000)!=0)throw new InvalidOperationException("Mouse button is in use; refusing to inject the controlled drag.");
             var from=new Point((int)(sourceBounds.X+sourceBounds.Width/2),(int)(sourceBounds.Y+sourceBounds.Height/2));
-            var emptyTarget=app.Panel.Controls.OfType<Label>().Single(label=>label.Text.StartsWith("从系统托盘",StringComparison.Ordinal));
+            var emptyTarget=app.Panel.Controls.OfType<Label>().Single();
             var emptyScreen=AutomationElement.FromHandle(emptyTarget.Handle).Current.BoundingRectangle;
             var to=new Point((int)(emptyScreen.X+emptyScreen.Width/2),(int)(emptyScreen.Y+emptyScreen.Height/2));
             checks["PanelManagedBounds"]=app.Panel.Bounds.ToString();
@@ -128,18 +128,21 @@ internal static class ProductSelfTest
             checks["NativeOriginalIconHidden"]=FindIcon(app.Bridge.ExplorerWindow,"NestedTray product fixture")==null;
             checks["RuleSavedToDisk"]=Settings.Load().Collected.Contains(rule);
             app.Panel.Hide();
-            Wait(()=>{OpenOverflow(app.Bridge.ExplorerWindow);entry=FindIcon(app.Bridge.ExplorerWindow,"嵌套面板");return entry!=null;});
+            Wait(()=>{OpenOverflow(app.Bridge.ExplorerWindow);entry=FindIcon(app.Bridge.ExplorerWindow,"TrayNest · 托盘收纳盒");return entry!=null;});
             ((InvokePattern)entry.GetCurrentPattern(InvokePattern.Pattern)).Invoke();Pump(200);
             checks["OrdinaryNativeEntryOpensPanel"]=app.Panel.Visible&&!app.Panel.ShowInTaskbar;
             var rect=Native.GetIconRect(record.Window,record.Id,record.Guid);
             checks["GetRectMatchesRealPanelTile"]=rect==app.Panel.CellBounds(record);
             if(!NativeOverflow.Visible)ClickOverflowChevron(app.Bridge.ExplorerWindow);Pump(300);
             checks["BothPanelsVisibleBeforeManualClose"]=app.Panel.Visible&&NativeOverflow.Visible;
-            ClickOverflowChevron(app.Bridge.ExplorerWindow,()=>checks["CollectedPanelClosesAtChevronPress"]=app.Panel.IsDismissing||!app.Panel.Visible);
+            // A completed click closes the pair. PointerDown only arms this
+            // action; PointerUp inside the chevron commits it (drag-out cancels).
+            ClickOverflowChevron(app.Bridge.ExplorerWindow);
+            checks["CollectedPanelClosesAfterChevronClick"]=app.Panel.IsDismissing||!app.Panel.Visible;
             Wait(()=>!NativeOverflow.Visible&&!app.Panel.Visible);
             checks["ClosingNativeOverflowClosesCollectedPanel"]=true;
             OpenOverflow(app.Bridge.ExplorerWindow);
-            entry=FindIcon(app.Bridge.ExplorerWindow,"嵌套面板")??throw new InvalidOperationException("No entry after closing paired panels.");
+            entry=FindIcon(app.Bridge.ExplorerWindow,"TrayNest · 托盘收纳盒")??throw new InvalidOperationException("No entry after closing paired panels.");
             ((InvokePattern)entry.GetCurrentPattern(InvokePattern.Pattern)).Invoke();Pump(200);
             string tip=record.Tooltip;Pump(600);checks["DynamicTooltipContinuesWhileCollected"]=record.Tooltip!=tip;
             if(app.Panel.Visible)
@@ -212,7 +215,7 @@ internal static class ProductSelfTest
             if(!app.Panel.Visible)
             {
                 OpenOverflow(app.Bridge.ExplorerWindow);
-                var entryBeforeOutside=FindIcon(app.Bridge.ExplorerWindow,"嵌套面板")??throw new InvalidOperationException("No entry before outside-click regression.");
+                var entryBeforeOutside=FindIcon(app.Bridge.ExplorerWindow,"TrayNest · 托盘收纳盒")??throw new InvalidOperationException("No entry before outside-click regression.");
                 ((InvokePattern)entryBeforeOutside.GetCurrentPattern(InvokePattern.Pattern)).Invoke();Pump(200);
             }
             checks["PanelVisibleBeforeOutsideClick"]=app.Panel.Visible;
@@ -225,7 +228,7 @@ internal static class ProductSelfTest
             if(!app.Panel.Visible)
             {
                 OpenOverflow(app.Bridge.ExplorerWindow);
-                var showEntry=FindIcon(app.Bridge.ExplorerWindow,"嵌套面板")??throw new InvalidOperationException("No entry before drag-out test.");
+                var showEntry=FindIcon(app.Bridge.ExplorerWindow,"TrayNest · 托盘收纳盒")??throw new InvalidOperationException("No entry before drag-out test.");
                 ((InvokePattern)showEntry.GetCurrentPattern(InvokePattern.Pattern)).Invoke();Pump(200);
             }
             checks["PanelVisibleBeforeDragOut"]=app.Panel.Visible;

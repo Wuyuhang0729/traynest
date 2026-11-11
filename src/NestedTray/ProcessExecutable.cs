@@ -16,6 +16,12 @@ internal static class ProcessExecutable
         try{var path=new StringBuilder(32768);uint size=(uint)path.Capacity;return QueryFullProcessImageNameW(handle,0,path,ref size)?path.ToString():"";}
         finally{CloseHandle(handle);}
     }
+    [DllImport("kernel32.dll",CharSet=CharSet.Unicode)]private static extern int GetApplicationUserModelId(nint process,ref uint length,StringBuilder id);
+    internal static string ApplicationId(int process)
+    {
+        nint handle=OpenProcess(0x1000,false,(uint)process);if(handle==0)return "";
+        try{uint length=512;var id=new StringBuilder((int)length);return GetApplicationUserModelId(handle,ref length,id)==0?id.ToString():"";}finally{CloseHandle(handle);}
+    }
     internal static int Probe(int process,string output)
     {string path=Read(process);File.WriteAllText(output,System.Text.Json.JsonSerializer.Serialize(new{Process=process,Resolved=!string.IsNullOrWhiteSpace(path),Executable=path}));return string.IsNullOrWhiteSpace(path)?1:0;}
 }

@@ -30,7 +30,7 @@ internal static class AutoExpandRegression
             var windows=Application.OpenForms.OfType<SettingsWindow>().ToArray();
             checks["SettingsUsesSingleIndependentWindow"]=windows.Length==1&&windows[0].ShowInTaskbar&&!windows[0].TopMost;
             var window=windows.Single();
-            window.Controls.Find("ExpansionMode",true).OfType<ComboBox>().Single().SelectedIndex=2;
+            WebSettingsTest.Page(window,1);WebSettingsTest.Set(window,"ExpansionMode",2);
             using(var bitmap=new Bitmap(window.Width,window.Height)){using(var graphics=Graphics.FromImage(bitmap))graphics.CopyFromScreen(window.Location,Point.Empty,window.Size);bitmap.Save(Path.Combine(root,"settings-live-general.png"));}
             window.SelectPage(1);Pump(120);
             using(var bitmap=new Bitmap(window.Width,window.Height)){using(var graphics=Graphics.FromImage(bitmap))graphics.CopyFromScreen(window.Location,Point.Empty,window.Size);bitmap.Save(Path.Combine(root,"settings-live-panel.png"));}

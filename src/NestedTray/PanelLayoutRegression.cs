@@ -37,10 +37,10 @@ internal static class PanelLayoutRegression
                 var tile=buttons[0];var flags=System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic;
                 tile.GetType().GetMethod("OnMouseEnter",flags)!.Invoke(tile,[EventArgs.Empty]);
                 using var hover=new Bitmap(tile.Width,tile.Height);tile.DrawToBitmap(hover,new Rectangle(Point.Empty,hover.Size));
-                bool rounded=hover.GetPixel(0,0).ToArgb()==tile.BackColor.ToArgb()&&hover.GetPixel(8,8).ToArgb()!=tile.BackColor.ToArgb();
+                bool rounded=hover.GetPixel(0,0).ToArgb()==tile.BackColor.ToArgb()&&hover.GetPixel(2,tile.Height/2).ToArgb()!=tile.BackColor.ToArgb()&&hover.GetPixel(8,8).ToArgb()==tile.BackColor.ToArgb();
                 tile.GetType().GetMethod("OnMouseLeave",flags)!.Invoke(tile,[EventArgs.Empty]);
                 using var normal=new Bitmap(tile.Width,tile.Height);tile.DrawToBitmap(normal,new Rectangle(Point.Empty,normal.Size));
-                bool cleared=normal.GetPixel(8,8).ToArgb()==tile.BackColor.ToArgb();success&=rounded&&cleared;
+                bool cleared=normal.GetPixel(2,tile.Height/2).ToArgb()==tile.BackColor.ToArgb();success&=rounded&&cleared;
                 results.Add(new{RoundedHoverCorners=rounded,HoverClearsOnLeave=cleared});hover.Save(Path.Combine(directory,"rounded-hover-tile.png"));
                 tile.GetType().GetMethod("OnMouseEnter",flags)!.Invoke(tile,[EventArgs.Empty]);
                 using var image=new Bitmap(panel.Width,panel.Height);panel.DrawToBitmap(image,new Rectangle(Point.Empty,image.Size));image.Save(Path.Combine(directory,"panel-17-icons.png"));

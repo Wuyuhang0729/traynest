@@ -1,89 +1,31 @@
-# 构建与测试
+# 源码构建与验证
 
 需要 Windows 11 x64、PowerShell 7 和 .NET 10 SDK。
 
-## 完整下载包
-
 ```powershell
+pwsh -File scripts/Prepare-InnoSetup.ps1
 pwsh -File scripts/Build-Release.ps1
 ```
 
-首次构建需要联网下载 .NET 运行时、Microsoft C++/WinRT 和 LLVM-MinGW 工具链。脚本将原生构建工具放在项目的 `.tools/native-bridge/` 中，不安装全局编译器；核对工具链摘要和 C++/WinRT 包签名后生成 WinRT 头文件。脚本在 `artifacts/` 生成自带运行时的 Windows x64 ZIP、校验文件和本次独立构建目录，并保留运行时和原生组件许可证。ZIP同时包含双击安装入口 `Install.cmd`、安装脚本与桌面快捷方式脚本。
+首次构建需联网恢复固定版本 NuGet 包、.NET 运行时、C++/WinRT 与 LLVM-MinGW 工具链。工具位于项目 .tools，不安装全局编译器；准备脚本核对工具链摘要、NuGet 签名和 Inno 官方签名。生成的自带运行时 ZIP、Inno EXE 和同名 SHA256 文件位于 artifacts。
 
-也可以直接构建：
+保留 src、installer、scripts，以及 verification/Shared/NativeTray.cs 和 verification/StandaloneProbe/TrayPacket.cs 的相对位置；后两者被主项目直接引用。原生桥接从 src/TrayNest.NativeBridge 构建，载荷带摘要清单和完整许可证。设置 HTML/CSS/JS 本地嵌入，无 CDN；使用固定 WebView2 SDK，运行时另需 Microsoft Edge WebView2 Runtime。
 
-```powershell
-pwsh -File scripts/Prepare-NativeBridgeTools.ps1
-pwsh -File scripts/Build-NativeBridge.ps1
-dotnet publish src/NestedTray/NestedTray.csproj -c Release -r win-x64 --self-contained true --source https://api.nuget.org/v3/index.json -o artifacts/publish
-```
-
-若分发手动构建结果，请一并保留项目许可证及运行时包提供的许可证和第三方声明；可以使用 `scripts/Copy-RuntimeNotices.ps1` 补齐。
-
-材质同步需要保留整个 `native/` 目录及 `artifacts/native-bridge/payload/licenses/native-bridge/` 中的声明。清单包含原生 DLL 和引导程序的 SHA256，主程序在使用前核对；更新时请一起替换。原生源码位于 `src/TrayNest.NativeBridge/`，使用 Microsoft 的 XAML Diagnostics 接口和 C++/WinRT；自有测试宿主不包含在安装包里。不要只分发托盘 EXE。
-
-`verification/Test-NativeBridgeFixture.ps1` 在自有 XAML 宿主验证目标匹配、材质切换、精确恢复和控制进程异常退出恢复。`--self-test-native-material <独立目录>` 与 `--self-test-material-settings <独立目录>` 会实际连接系统隐藏区，检查背景及设置交互并在结束后恢复；应先退出正在使用的 TrayNest，顺序运行，勿与其他桌面操作并发。
-
-`verification/Shared/NativeTray.cs` 和 `verification/StandaloneProbe/TrayPacket.cs` 是项目通过相对路径引用的源码，请保留目录结构。
-
-## 自有测试来源
+## 隔离验证
 
 ```powershell
-dotnet publish verification/TrayFixture/TrayFixture.csproj -c Release -r win-x64 --self-contained true --source https://api.nuget.org/v3/index.json -o artifacts/fixture
+dotnet run --project src/TrayNest.Installation.Tests -c Release -- artifacts/qa/core
+pwsh -File verification/Test-TN017-Installer.ps1 -Payload <完整候选目录> -OutputDirectory artifacts/qa/installer
 ```
 
-主程序提供独立测试入口。动画、布局和诊断可以使用独立目录运行：
+安装测试使用专用 AppId 和配置，实际检查首装、覆盖、损坏包回退和卸载，不启动真实托盘或改变真实自启动。实时 Release 只读查询：
 
 ```powershell
-artifacts/publish/NestedTray.exe --self-test-animation artifacts/qa/animation
-artifacts/publish/NestedTray.exe --self-test-layout artifacts/qa/layout
-artifacts/publish/NestedTray.exe --self-test-diagnostics artifacts/qa/diagnostics
-artifacts/publish/NestedTray.exe --self-test-tray-connection artifacts/qa/tray-connection
-artifacts/publish/NestedTray.exe --self-test-startup artifacts/qa/startup
-artifacts/publish/NestedTray.exe --self-test-experience artifacts/qa/experience
-artifacts/publish/NestedTray.exe --self-test-fixed-tools artifacts/qa/fixed-tools
-artifacts/publish/NestedTray.exe --self-test-placement artifacts/qa/placement
-artifacts/publish/NestedTray.exe --self-test-appearance artifacts/qa/appearance
+dotnet run --project src/TrayNest.Installation.Tests -c Release -- --live 0.2.0-preview.16 artifacts/qa/live.json
 ```
 
-托盘连接检查使用自有隔离原生窗口，验证超时后保留程序、按间隔重试和响应恢复，不移动鼠标、不操作真实 Explorer。
+主程序 --self-test-settings、--self-test-entry-policy、--self-test-opening、--self-test-placement、--self-test-animation、--self-test-layout 等入口接收独立结果目录。settings 使用真实 WebView 页面但不移动鼠标；逻辑和模拟检查不替代真实 DPI、材质或桌面交互。
 
-外观检查使用独立配置和测试面板，验证保存、切换、失败回滚与配色。增加 `--capture` 参数可在自有色块背景上截取四种外观；亚克力效果应结合实际截图确认。
+scripts/Test-Release.ps1 包含会操作桌面的完整测试：先正常退出日常 TrayNest，使用 verification/TrayFixture 自有图标并暂停输入，再顺序运行。不要与日常版并发接管托盘，不重启 Explorer。verification/Test-NativeBridgeFixture.ps1 使用自有 XAML 宿主检查材质及恢复，不能把初始化成功当视觉验收。
 
-`--self-test-entry-hover <独立目录> <TrayFixture.exe>` 使用自有图标，分别从面板关闭和展开状态实际拖到入口，验证展开、布局响应及松手收纳。此项会短暂移动鼠标，开始前应退出正在使用的 TrayNest 并暂停输入；测试会恢复原光标，不写真实收纳配置。
-
-体验优化检查使用独立配置、实际恢复记录文件、注入的原生状态适配器和屏幕外面板，覆盖批量取消／部分失败、日志与配置故障、拖动越界取消、可控时钟启动状态及模拟DPI文案布局。不接管Explorer、不移动鼠标，也不代替真实拖放、第三方菜单或真实DPI验证。
-
-启动隔离测试核对登录任务配置、Windows 规范化后的配置读取、延迟就绪和有界等待，不写真实启动设置、不重启电脑。真实登录触发应独立验证，不能以此隔离测试代替。`verification/Deploy-StartupFix.ps1` 是本机修复部署脚本，会备份配置、正常退出已有版本、切换真实启动开关，并通过当前用户登录任务启动软件；它会修改本机自启动设置。
-
-完整交互回归还包括入口菜单、旧版/GUID 图标、跨进程拖放、隐藏维护及故障回滚/崩溃恢复。
-
-## 品牌图标与桌面快捷方式
-
-`src/NestedTray/Resources/TrayNest.ico` 是提交到源码的正式多尺寸图标，同时用于Windows EXE资源、嵌入程序集的托盘／窗口图标以及发布目录中的独立ICO。正常构建不需要图形工具或网络生成图标。
-
-完整矢量源、16–1024像素PNG、单色版和六方案展示在 `assets/branding/`。需要重新生成时，执行 `npm install --prefix .tools/logo-render @resvg/resvg-js@2.6.2`，再运行 `node scripts/Build-Icons.cjs`。ICO包含16、20、24、32、40、48、64、96、128、256像素的32位透明帧。
-
-完整包解压后双击 `Install.cmd`，使用系统自带的 Windows PowerShell 安装到当前用户的 `%LOCALAPPDATA%\Programs\TrayNest`，自动创建桌面快捷方式并启动。无需管理员权限，不自动启用开机启动。安装脚本先完整复制并校验核心文件，再切换目录；创建快捷方式失败时恢复原安装与原快捷方式。更新前须正常退出目标安装目录中正在运行的 TrayNest。用户设置保存在独立的 `%LOCALAPPDATA%\NestedTray`，安装不覆盖该目录。
-
-发布脚本会附带 `TrayNest.ico` 和 `Create-DesktopShortcut.ps1`。便携使用时，在解压目录运行后者也能创建显式引用同目录ICO的桌面快捷方式；直接在源码目录调用时使用 `scripts/Create-DesktopShortcut.ps1 -InstallDirectory <程序目录>`。快捷方式会清空旧参数，并在保存后核对目标、工作目录与图标。
-
-隔离验证可调用 `Install-TrayNest.ps1 -SourceDirectory <完整包> -InstallDirectory <测试安装目录> -DesktopDirectory <测试桌面目录> -NoLaunch`，避免覆盖真实桌面或接管正在使用的托盘。不要将测试目录指定为真实安装目录。
-
-```powershell
-pwsh -File scripts/Test-Release.ps1 -CandidateDirectory artifacts/publish -FixtureExe artifacts/fixture/TrayFixture.exe
-```
-
-执行完整测试前请退出正在使用的 TrayNest，并暂停鼠标键盘操作。测试使用自有图标，会移动鼠标；崩溃恢复用例会强制结束它自己创建的测试收纳进程。勿将未知或用户软件作为测试来源。测试不会启用开机启动，也不会重启 Explorer。
-
-测试结果不代表全部 Windows 构建、第三方软件或显示配置均兼容。范围见 [兼容性说明](docs/COMPATIBILITY.md)。
-
-## 面板内排序交互测试
-
-```powershell
-artifacts/publish/NestedTray.exe --self-test-panel-reorder artifacts/qa/panel-reorder
-```
-
-此项会移动真实鼠标并发送 Esc，运行前请暂停输入。它只操作独立面板中的十个自有测试图标，使用独立配置目录，不接管 Explorer、不写真实自启动。检查目标框、无悬浮重复图标、实时让位、松手保存、取消、灰色图标、配置写入失败和重开保持顺序，并保存操作中与放下后的截图。此项已加入完整交互回归入口。
-
-`--self-test-reorder-motion <目录>` 则在屏幕外验证 180 毫秒换位动画，检查起点、中间位置、相邻图标移动、连续改向不跳位和取消回位，不移动鼠标。遵循 Windows 的系统动画开关。
+安装说明、限制及本版验证边界见 docs/USER_GUIDE.md、docs/COMPATIBILITY.md 与 docs/RELEASE-0.2.0-preview.17.md。

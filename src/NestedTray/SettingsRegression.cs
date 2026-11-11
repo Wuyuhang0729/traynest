@@ -11,6 +11,11 @@ internal static class SettingsRegression
         var checks=new Dictionary<string,bool>();var errors=new List<string>();
         try
         {
+            using var first=new IconRecord();using var second=new IconRecord();using var selected=new IconRecord{Selected=true};using var added=new IconRecord();
+            var changing=new Dictionary<string,IconRecord>{{"first",first},{"second",second},{"selected",selected}};int queries=0;var expectedBounds=new Rectangle(10,20,30,40);
+            TrayApplication.CacheNativeBoundsSnapshot(changing.Values,record=>{queries++;if(queries==1){changing.Remove("second");changing.Add("added",added);}return expectedBounds;});
+            checks["BoundsCacheSurvivesReentrantIconRegistration"]=queries==2&&first.NativeBounds==expectedBounds&&second.NativeBounds==expectedBounds;
+            checks["BoundsCacheSkipsSelectedAndDefersNewIcons"]=selected.NativeBounds.IsEmpty&&added.NativeBounds.IsEmpty;
             checks["LimitedProcessQueryReadsOwnExecutable"]=string.Equals(ProcessExecutable.Read(Environment.ProcessId),Environment.ProcessPath,StringComparison.OrdinalIgnoreCase);
             checks["MissingProcessReturnsEmptyPath"]=ProcessExecutable.Read(int.MaxValue)=="";
             Directory.CreateDirectory(Settings.DirectoryPath);File.WriteAllText(Settings.FilePath,"{\"Collected\":[],\"Tools\":[]}");
@@ -42,20 +47,75 @@ internal static class SettingsRegression
             checks["FollowResumesAfterInteraction"]=controller.Evaluate(600,true,true,true,false,true,false)==AutoExpandReason.NativeOverflow;
             controller=new();controller.Evaluate(0,false,true,false,false,true,false);controller.SuppressCurrentCycle(false);
             checks["ManualCloseSuppressesHover"]=controller.Evaluate(1000,false,true,false,false,true,false)==AutoExpandReason.None;
+            checks["OldProfileDefaultsToSystemWindowTheme"]=Settings.Load().SettingsTheme==SettingsTheme.System;
+            checks["OldProfileDefaultsToIndependentUpdateSwitches"]=Settings.Load().AutoCheckUpdates&&Settings.Load().ImportantUpdateReminders;
+            foreach(bool automatic in new[]{false,true})foreach(bool important in new[]{false,true})
+            {settings.ChangeUpdatePreference(automatic,important);var read=Settings.Load();checks[$"UpdateSwitchesPersist_{automatic}_{important}"]=read.AutoCheckUpdates==automatic&&read.ImportantUpdateReminders==important;}
+            settings.BeforeSave=()=>throw new IOException("controlled update preference failure");bool updateSaveFailed=false;
+            try{settings.ChangeUpdatePreference(false,false);}catch(TrayNestException){updateSaveFailed=true;}
+            checks["UpdatePreferenceFailureRollsBack"]=updateSaveFailed&&settings.AutoCheckUpdates&&settings.ImportantUpdateReminders;settings.BeforeSave=null;
             bool startup=false;using var window=new SettingsWindow(settings,()=>{},()=>startup,value=>startup=value);
-            window.Show();Pump(150);
-            checks["IndependentTaskbarWindow"]=window.ShowInTaskbar&&!window.TopMost&&window.FormBorderStyle==FormBorderStyle.Sizable;
-            var expansion=window.Controls.Find("ExpansionMode",true).OfType<ComboBox>().Single();
-            checks["ExpansionOrderVisibleForFollowOnly"]=window.Controls.Find("ExpansionOrderRow",true).Single().Visible;
-            expansion.SelectedIndex=2;checks["WindowControlPersistsExclusiveHover"]=!Settings.Load().FollowNativeOverflow&&Settings.Load().HoverToOpen;
-            checks["ExpansionOrderHiddenForHover"]=!window.Controls.Find("ExpansionOrderRow",true).Single().Visible;
-            settings.BeforeSave=()=>throw new IOException("Controlled UI save failure");expansion.SelectedIndex=1;
-            checks["WindowControlFailureRestoresMode"]=expansion.SelectedIndex==2&&!Settings.Load().FollowNativeOverflow;settings.BeforeSave=null;
-            foreach(int page in new[]{0,1,2}){window.SelectPage(page);Pump(100);using var bitmap=new Bitmap(window.Width,window.Height);window.DrawToBitmap(bitmap,new Rectangle(Point.Empty,bitmap.Size));bitmap.Save(Path.Combine(root,$"settings-{page}.png"));}
-            window.SelectPage(1);var appearance=window.Controls.Find("Appearance",true).OfType<ComboBox>().Single();appearance.SelectedIndex=3;
-            checks["WindowAppearancePersists"]=Settings.Load().Appearance==PanelAppearance.Dark;
-            var columns=window.Controls.Find("Columns",true).OfType<ComboBox>().Single();columns.SelectedIndex=2;
-            checks["WindowColumnsPersist"]=Settings.Load().Columns==7;window.Close();
+            window.Show();WebSettingsTest.Ready(window);
+            checks["IndependentTaskbarWindow"]=window.ShowInTaskbar&&!window.TopMost;
+            WebSettingsTest.Page(window,0);
+            checks["UpdateControlsInGeneral"]=WebSettingsTest.Exists(window,"AutoCheckUpdates")&&WebSettingsTest.Exists(window,"ImportantUpdateReminders")&&WebSettingsTest.Exists(window,"checkUpdate");
+            WebSettingsTest.Set(window,"AutoCheckUpdates",false);
+            checks["ManualCheckAvailableWithAutoOff"]=WebSettingsTest.Script<bool>(window,"!document.getElementById('checkUpdate').disabled")&&!Settings.Load().AutoCheckUpdates;
+            checks["AutoDoesNotDisableReminderPreference"]=WebSettingsTest.Checked(window,"ImportantUpdateReminders");
+            WebSettingsTest.Set(window,"ImportantUpdateReminders",false);
+            checks["ReminderCanBeDisabledSeparately"]=!Settings.Load().ImportantUpdateReminders;
+            settings.BeforeSave=()=>throw new IOException("controlled update UI save failure");WebSettingsTest.Set(window,"AutoCheckUpdates",true);
+            checks["UpdateUIFailureRestoresToggle"]=!WebSettingsTest.Checked(window,"AutoCheckUpdates")&&!settings.AutoCheckUpdates;settings.BeforeSave=null;
+            WebSettingsTest.Script<bool>(window,"updateView({Status:'test',Version:'test',Summary:'<img src=x onerror=alert(1)>',CanDownload:true});true");
+            checks["ReleaseTextNeverBecomesMarkup"]=WebSettingsTest.Script<bool>(window,"!document.querySelector('#update-info img')&&document.querySelector('#update-info').textContent.includes('<img')");
+            WebSettingsTest.Capture(window,Path.Combine(root,"settings-updates.png"));
+            WebSettingsTest.Page(window,1);
+            checks["ExpansionOrderVisibleForFollowOnly"]=WebSettingsTest.Visible(window,"RowNativeExpansionOrder");
+            WebSettingsTest.Set(window,"ExpansionMode",2);checks["WindowControlPersistsExclusiveHover"]=Settings.Load().HoverToOpen&&!Settings.Load().FollowNativeOverflow;
+            checks["ExpansionOrderHiddenForHover"]=!WebSettingsTest.Exists(window,"NativeExpansionOrder");
+            settings.BeforeSave=()=>throw new IOException("controlled UI failure");WebSettingsTest.Set(window,"ExpansionMode",1);
+            checks["WindowControlFailureRestoresMode"]=WebSettingsTest.Value(window,"ExpansionMode")==2&&settings.HoverToOpen;settings.BeforeSave=null;
+            foreach(var theme in new[]{SettingsTheme.Light,SettingsTheme.Dark,SettingsTheme.System})
+            {
+                WebSettingsTest.Set(window,"SettingsTheme",(int)theme);
+                checks[$"ThemePersists_{theme}"]=Settings.Load().SettingsTheme==theme;
+                checks[$"ThemeDoesNotChangePanel_{theme}"]=settings.Appearance==PanelAppearance.FollowSystem;
+                WebSettingsTest.Capture(window,Path.Combine(root,$"settings-theme-{theme}.png"));
+            }
+            void Emulate(string scheme){var task=window.Browser.CoreWebView2.CallDevToolsProtocolMethodAsync("Emulation.setEmulatedMedia",JsonSerializer.Serialize(new{features=new[]{new{name="prefers-color-scheme",value=scheme}}}));WebSettingsTest.Wait(()=>task.IsCompleted);task.GetAwaiter().GetResult();Pump(120);}
+            WebSettingsTest.Set(window,"SettingsTheme",0);Emulate("dark");checks["SystemThemeTracksDarkLive"]=WebSettingsTest.Script<string>(window,"document.documentElement.dataset.theme")=="dark"&&settings.SettingsTheme==SettingsTheme.System;
+            Emulate("light");checks["SystemThemeTracksLightLive"]=WebSettingsTest.Script<string>(window,"document.documentElement.dataset.theme")=="light";
+            WebSettingsTest.Set(window,"SettingsTheme",2);checks["ExplicitDarkIgnoresSystemLight"]=WebSettingsTest.Script<string>(window,"document.documentElement.dataset.theme")=="dark";
+            WebSettingsTest.Script<bool>(window,"document.querySelector('[data-field=OpeningMode] .picker-trigger').click();true");WebSettingsTest.Capture(window,Path.Combine(root,"capsule-menu-dark.png"));
+            checks["CapsuleMenuHasSelectedCheck"]=WebSettingsTest.Script<bool>(window,"!!document.querySelector('[data-field=OpeningMode] [role=option][aria-selected=true] svg')");WebSettingsTest.Script<bool>(window,"closePickers();true");
+            WebSettingsTest.Set(window,"SettingsTheme",0);
+            settings.BeforeSave=()=>throw new IOException("controlled theme failure");WebSettingsTest.Set(window,"SettingsTheme",2);
+            checks["ThemeFailureRestoresPersistedAndDisplayedValue"]=settings.SettingsTheme==SettingsTheme.System&&WebSettingsTest.Value(window,"SettingsTheme")==0;settings.BeforeSave=null;
+            WebSettingsTest.Page(window,2);WebSettingsTest.Set(window,"Appearance",3);WebSettingsTest.Set(window,"Columns",7);
+            checks["AppearanceAndColumnsPersist"]=Settings.Load().Appearance==PanelAppearance.Dark&&Settings.Load().Columns==7;
+            settings.BeforeSave=()=>throw new IOException("controlled appearance failure");WebSettingsTest.Set(window,"Appearance",1);WebSettingsTest.Set(window,"Columns",5);
+            checks["AppearanceAndColumnsRollback"]=WebSettingsTest.Value(window,"Appearance")==3&&WebSettingsTest.Value(window,"Columns")==7;settings.BeforeSave=null;
+            WebSettingsTest.Page(window,0);WebSettingsTest.Set(window,"StartupEnabled",true);checks["StartupUsesExistingService"]=startup;
+            settings.ChangeBehavior(true,false,settings.MatchPanelMaterials);window.RefreshValues();WebSettingsTest.Page(window,1);
+            checks["SelectedTypographyBaselineApplied"]=WebSettingsTest.Script<bool>(window,"getComputedStyle(document.querySelector('.setting-copy label')).fontSize==='17px'&&getComputedStyle(document.querySelector('.setting-copy p')).fontSize==='14px'&&getComputedStyle(document.querySelector('.page-heading h1')).fontSize==='32px'&&getComputedStyle(document.querySelector('#navigation button')).fontSize==='15px'&&getComputedStyle(document.querySelector('.setting-row')).minHeight==='92px'");
+            checks["LinkedOptionsReachableWithScrolling"]=WebSettingsTest.Script<bool>(window,"(()=>{const main=document.querySelector('main');main.scrollTop=main.scrollHeight;const last=document.getElementById('RowBlankCellOpens').getBoundingClientRect();const visible=last.top>=main.getBoundingClientRect().top&&last.bottom<=innerHeight;main.scrollTop=0;return visible})()");
+            checks["DeveloperTunerAbsentFromProduct"]=WebSettingsTest.Script<bool>(window,"!document.querySelector('#typography-panel,#typography-toggle,#native-developer-typography')");
+            WebSettingsTest.Set(window,"OpeningMode",1);
+            checks["IndependentShowsEffectiveModeAndKeepsPreference"]=WebSettingsTest.Value(window,"ExpansionMode")==0&&settings.FollowNativeOverflow;
+            checks["LinkedOnlyControlsHiddenInIndependent"]=!WebSettingsTest.Exists(window,"ShortcutTarget")&&!WebSettingsTest.Exists(window,"BlankCellOpens");
+            WebSettingsTest.Set(window,"ExpansionMode",2);checks["IndependentHoverPersists"]=settings.HoverToOpen&&!settings.FollowNativeOverflow;
+            WebSettingsTest.Page(window,2);checks["IndependentPositionShowsActualFixedAbove"]=WebSettingsTest.Value(window,"Placement")==1&&!WebSettingsTest.Enabled(window,"Placement");
+            WebSettingsTest.Page(window,1);WebSettingsTest.Set(window,"OpeningMode",0);checks["LinkedControlsReturnAfterModeSwitch"]=WebSettingsTest.Exists(window,"BlankCellOpens");
+            checks["RemovedDecorationAbsent"]=WebSettingsTest.Script<bool>(window,"!document.querySelector('.eyebrow,.nav-caption,.prototype-note,.save-state')");
+            foreach(var size in new[]{new Size(760,570),new Size(1100,800)})
+            {
+                window.Size=size;Pump(100);
+                foreach(int section in new[]{0,1,2,3}){WebSettingsTest.Page(window,section);checks[$"HorizontalBounds_{size.Width}_{section}"]=WebSettingsTest.Script<bool>(window,"document.documentElement.scrollWidth<=innerWidth&&[...document.querySelectorAll('main .setting-row')].every(e=>e.getBoundingClientRect().right<=innerWidth)");WebSettingsTest.Capture(window,Path.Combine(root,$"settings-{size.Width}-{section}.png"));}
+            }
+            WebSettingsTest.Script<bool>(window,"send('Columns',999);true");Pump(200);
+            checks["InvalidBridgeValueCannotChangeConfiguration"]=settings.Columns==7&&Settings.Load().Columns==7;
+            window.Close();
+
         }
         catch(Exception error){errors.Add(error.ToString());}
         return Report(root,"settings",checks,errors);

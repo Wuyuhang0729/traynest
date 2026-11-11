@@ -7,9 +7,21 @@ internal static class ExperienceRegression
     internal static int Run(string directory)
     {
         directory=Path.GetFullPath(directory);Directory.CreateDirectory(directory);
-        var checks=new Dictionary<string,bool>();var errors=new List<string>();
+        var checks=new Dictionary<string,bool>();var errors=new List<string>();var outcomes=new Dictionary<string,BulkRestoreResult>();
         try
         {
+            string locked=Path.Combine(directory,"commit-target"),pending=locked+".tmp";
+            File.WriteAllText(locked,"old");File.WriteAllText(pending,"new");
+            using(var hold=new FileStream(locked,FileMode.Open,FileAccess.Read,FileShare.Read))
+            {
+                bool rejected=false;
+                try{AtomicFile.Commit(pending,locked);}catch(Exception error)when(error is IOException or UnauthorizedAccessException){rejected=true;}
+                checks["PersistentLockFailsWithoutDeletingEitherFile"]=rejected&&File.ReadAllText(locked)=="old"&&File.ReadAllText(pending)=="new";
+            }
+            var transient=new FileStream(locked,FileMode.Open,FileAccess.Read,FileShare.Read);
+            var release=Task.Run(()=>{Thread.Sleep(100);transient.Dispose();});
+            try{AtomicFile.Commit(pending,locked);}finally{release.GetAwaiter().GetResult();transient.Dispose();}
+            checks["TransientLockCommitsAfterRelease"]=File.ReadAllText(locked)=="new"&&!File.Exists(pending);
             foreach(string scenario in new[]{"cancel","success","mixed","first","middle","final-save","journal","journal-after-native","siblings","siblings-failure"})
             {
                 Environment.SetEnvironmentVariable("NESTEDTRAY_TEST_PROFILE",Path.Combine(directory,scenario));Directory.CreateDirectory(Settings.DirectoryPath);
@@ -29,7 +41,7 @@ internal static class ExperienceRegression
                 settings.BeforeSave=()=>{saves++;if(scenario=="final-save"&&saves==4)throw new IOException("Own injected save failure");};
                 journal.BeforeWrite=()=>{writes++;if(scenario=="journal"||scenario=="journal-after-native"&&writes==2)throw new IOException("Own injected journal failure");};
                 bridge.StateOverride=(icon,state)=>{if(state==0&&(scenario=="first"&&icon.Key=="own:0"||scenario=="middle"&&icon.Key=="own:1"||scenario=="siblings-failure"&&icon.Key=="own:3"))throw new InvalidOperationException("Own injected native failure");native[icon.Key]=state;};
-                var result=bridge.RestoreAll(scenario!="cancel");
+                var result=bridge.RestoreAll(scenario!="cancel");outcomes[scenario]=result;
                 if(scenario=="cancel")checks["CancelChangesNeitherMemoryNorDisk"]=result==new BulkRestoreResult(0,0,0,false)&&before==File.ReadAllText(Settings.FilePath)&&recoveryBefore==File.ReadAllText(journal.PathName)&&saves==0&&writes==0;
                 else
                 {
@@ -49,7 +61,7 @@ internal static class ExperienceRegression
         }
         catch(Exception error){errors.Add(error.ToString());}
         bool passed=checks.Values.All(value=>value)&&errors.Count==0;
-        File.WriteAllText(Path.Combine(directory,"experience-test.json"),JsonSerializer.Serialize(new{Passed=passed,Checks=checks,Errors=errors,Scope="Isolated native-state adapter and real settings/recovery files; no Explorer takeover, input or user profile access."},DiagnosticStore.JsonOptions));
+        File.WriteAllText(Path.Combine(directory,"experience-test.json"),JsonSerializer.Serialize(new{Passed=passed,Checks=checks,Errors=errors,Outcomes=outcomes,Scope="Isolated native-state adapter and real settings/recovery files; no Explorer takeover, input or user profile access."},DiagnosticStore.JsonOptions));
         return passed?0:1;
     }
     private static void VerifyPanelAndLaunch(string directory,Dictionary<string,bool> checks)

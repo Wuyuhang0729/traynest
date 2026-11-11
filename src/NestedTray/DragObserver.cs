@@ -9,23 +9,31 @@ internal sealed class DragObserver:IDisposable
     private uint threadId;
     internal Action<Point,nint,bool,long>? Down;
     internal Action<Point,nint,long>? OtherDown;
-    internal Action<Point>? Up;
+    internal Action<Point,long>? Up;
+    internal Action? CancelClick;
+    private Point press; private bool tracking;
     internal DragObserver(Control dispatcher)
     {
         callback=(code,wp,lp)=>
         {
             try
             {
-                if(code>=0&&wp is 0x201 or 0x202 or 0x204)
+                if(code>=0&&wp is 0x200 or 0x201 or 0x202 or 0x204)
                 {
                     var data=Marshal.PtrToStructure<Native.MouseData>(lp);
+                    var observed=new Point(data.Point.X,data.Point.Y);
+                    if(wp==0x201){press=observed;tracking=true;}
+                    if(wp==0x204||wp==0x200&&tracking&&(Math.Abs(observed.X-press.X)>=SystemInformation.DragSize.Width/2||Math.Abs(observed.Y-press.Y)>=SystemInformation.DragSize.Height/2))
+                    {tracking=false;if(!dispatcher.IsDisposed)dispatcher.BeginInvoke((Action)(()=>CancelClick?.Invoke()));}
+                    if(wp==0x202)tracking=false;
+                    if(wp==0x200)return Native.CallNextHookEx(0,code,wp,lp);
                     if(!dispatcher.IsDisposed) {
                         var point=new Point(data.Point.X,data.Point.Y);bool down=wp is 0x201 or 0x204,right=wp==0x204;
                         // Capture before Explorer handles the press or creates its drag window.
                         nint sourceRoot=down?Native.GetAncestor(Native.WindowFromPoint(data.Point),2):0;
                         bool nativeVisible=down&&NativeOverflow.Visible;
                         long observedAt=Environment.TickCount64;
-                        dispatcher.BeginInvoke((Action)(()=>{if(right)OtherDown?.Invoke(point,sourceRoot,observedAt);else if(down)Down?.Invoke(point,sourceRoot,nativeVisible,observedAt);else Up?.Invoke(point);}));
+                        dispatcher.BeginInvoke((Action)(()=>{if(right)OtherDown?.Invoke(point,sourceRoot,observedAt);else if(down)Down?.Invoke(point,sourceRoot,nativeVisible,observedAt);else Up?.Invoke(point,observedAt);}));
                     }
                 }
             }

@@ -10,21 +10,23 @@ internal static class DismissAnimationRegression
         var r=new Dictionary<string,object?>{["SystemClientAnimation"]=SystemAnimation.Read(0x1042),["SystemMenuAnimation"]=SystemAnimation.Read(0x1002),["SystemMenuFade"]=SystemAnimation.Read(0x1012),["NativeDurationOrCurveAvailable"]=false};
         using var panel=new TrayPanel();var work=Screen.PrimaryScreen!.WorkingArea;panel.EntryRectangle=new Rectangle(work.Right-40,work.Bottom-8,16,16);
         var approved=panel.DismissSettings;
-        r["WindowsPopupProfile"]=approved.Enabled&&approved.DurationMs==367&&approved.DistanceDip==24&&approved.Fade&&approved.Curve=="Windows弹出"&&approved.ClosingDuration==83;
+        r["WindowsPopupProfile"]=approved.Enabled&&approved.DurationMs==250&&!approved.Fade&&approved.Curve=="Windows弹出"&&approved.ClosingDuration==215;
         r["BezierSolvesTimeAxis"]=Math.Abs(DismissOptions.CubicBezier(.2375,.1,.9,.2,1)-.8375)<.00001;
         var frames=new List<(Point Point,long Time)>();panel.MotionFrame+=(point,time)=>frames.Add((point,time));
         panel.Render([]);nint beforeOpenForeground=Native.GetForegroundWindow();panel.Open();Point openingStart=panel.Location;nint openingHandle=panel.Handle;
+        // Zero-exposure frames now stay hidden and clipped above the taskbar.
+        bool startsUnexposed=!Native.IsWindowVisible(openingHandle)&&panel.WantsVisible;
         if(SystemAnimation.Enabled)
         {
-            r["OpeningBeginsBelowFinalPosition"]=panel.IsOpening&&!panel.IsDismissing&&panel.Visible;
-            Pump(65);r["OpeningMovesBeforeFadeIn"]=panel.Top<openingStart.Y&&panel.Opacity<1;
+            r["OpeningBeginsUnexposed"]=panel.IsOpening&&!panel.IsDismissing&&startsUnexposed;
+            Pump(65);r["OpeningSlidesFromEdge"]=panel.Top<openingStart.Y&&panel.Opacity==1;
             r["OpeningPreservesHandleAndDragAvailability"]=panel.Handle==openingHandle&&panel.Enabled;
         }
         Pump(400);Point approvedHome=panel.Location;
         r["OpeningFinishesAtOriginalPosition"]=panel.Visible&&!panel.IsOpening&&!panel.IsDismissing;
         if(SystemAnimation.Enabled)
         {
-            r["OpeningUsesConfiguredDistance"]=openingStart.Y-approvedHome.Y==(int)Math.Round(24*panel.DeviceDpi/96.0);
+            r["OpeningStartsWithoutTaskbarExposure"]=startsUnexposed&&panel.MotionOriginEdge==work.Bottom;
             r["OpeningFollowsOneMonotonePath"]=frames.Count>=6&&frames.All(frame=>frame.Point.X==approvedHome.X)&&frames.Zip(frames.Skip(1)).All(pair=>pair.Second.Point.Y<=pair.First.Point.Y);
             var gaps=frames.Zip(frames.Skip(1)).Select(pair=>Stopwatch.GetElapsedTime(pair.First.Time,pair.Second.Time).TotalMilliseconds).Order().ToArray();
             r["OpeningFrameCount"]=frames.Count;r["OpeningFrameGapP95Ms"]=gaps.Length>0?gaps[(int)((gaps.Length-1)*.95)]:0;
@@ -32,7 +34,7 @@ internal static class DismissAnimationRegression
         }
         r["OpeningDoesNotStealForeground"]=Native.GetForegroundWindow()==beforeOpenForeground;
         panel.Dismiss();Pump(70);
-        if(SystemAnimation.Enabled)r["PopupExitFadesWithoutSpuriousTravel"]=panel.IsDismissing&&panel.Top==approvedHome.Y&&panel.Opacity<1;
+        if(SystemAnimation.Enabled)r["PopupSlidesBackToEdge"]=panel.IsDismissing&&panel.Top>approvedHome.Y&&panel.Opacity==1;
         Pump(160);r["ApprovedAnimationFinishes"]=!panel.Visible&&!panel.IsDismissing;
         panel.Render([]);panel.Open();Pump(430);nint handle=panel.Handle,foreground=Native.GetForegroundWindow();
         panel.DismissSettings=new DismissOptions{DurationMs=180,DistanceDip=36,Fade=true,Curve="加速下沉"};Point home=panel.Location;

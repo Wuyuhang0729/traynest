@@ -7,6 +7,7 @@ internal sealed class AutoExpand
 {
     private bool observedNative,wasHovering,followHandled,hoverHandled;
     private long hoverSince;
+    internal void NativeHidden(){observedNative=false;followHandled=false;}
     internal const int HoverDelayMs=450;
     internal AutoExpandReason Evaluate(long now,bool follow,bool hover,bool nativeVisible,bool panelVisible,bool overEntry,bool blocked)
     {

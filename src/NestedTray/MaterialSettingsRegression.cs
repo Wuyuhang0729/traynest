@@ -13,16 +13,16 @@ internal static class MaterialSettingsRegression
         try
         {
             app.OwnMenu.Items.OfType<ToolStripMenuItem>().Single(item=>item.Text=="设置").PerformClick();Pump(200);
-            var window=Application.OpenForms.OfType<SettingsWindow>().Single();window.SelectPage(1);
-            var mirror=window.Controls.Find("MatchPanelMaterials",true).OfType<CheckBox>().Single();mirror.Checked=true;
-            Wait(()=>mirror.Enabled,10000);
-            checks["SyncTogglePersistsAfterNativeAcknowledgement"]=mirror.Checked&&Settings.Load().MatchPanelMaterials;
+            var window=Application.OpenForms.OfType<SettingsWindow>().Single();WebSettingsTest.Page(window,2);
+            WebSettingsTest.Set(window,"MatchPanelMaterials",true);
+
+            checks["SyncTogglePersistsAfterNativeAcknowledgement"]=WebSettingsTest.Checked(window,"MatchPanelMaterials")&&Settings.Load().MatchPanelMaterials;
             checks["CollectionUsesAcrylicWhenSynchronized"]=app.Panel.Appearance==PanelAppearance.Acrylic&&(!PanelTheme.TransparencyEnabled||SystemInformation.HighContrast||app.Panel.AcrylicActive);
-            var appearance=window.Controls.Find("Appearance",true).OfType<ComboBox>().Single();
-            appearance.SelectedIndex=3;Pump(900);checks["DarkSelectionUpdatesCollection"]=!app.Panel.LightSurface&&Settings.Load().Appearance==PanelAppearance.Dark;
-            appearance.SelectedIndex=2;Pump(900);checks["LightSelectionUpdatesCollection"]=app.Panel.LightSurface&&Settings.Load().Appearance==PanelAppearance.Light;
-            appearance.SelectedIndex=0;Pump(900);checks["FollowSystemUsesSharedMaterial"]=app.Panel.Appearance==PanelAppearance.Acrylic&&Settings.Load().Appearance==PanelAppearance.FollowSystem;
-            appearance.SelectedIndex=1;Pump(900);
+
+            WebSettingsTest.Set(window,"Appearance",3);Pump(900);checks["DarkSelectionUpdatesCollection"]=!app.Panel.LightSurface&&Settings.Load().Appearance==PanelAppearance.Dark;
+            WebSettingsTest.Set(window,"Appearance",2);Pump(900);checks["LightSelectionUpdatesCollection"]=app.Panel.LightSurface&&Settings.Load().Appearance==PanelAppearance.Light;
+            WebSettingsTest.Set(window,"Appearance",0);Pump(900);checks["FollowSystemUsesSharedMaterial"]=app.Panel.Appearance==PanelAppearance.Acrylic&&Settings.Load().Appearance==PanelAppearance.FollowSystem;
+            WebSettingsTest.Set(window,"Appearance",1);Pump(900);
             phase="hide-settings";window.Hide();Pump(600);
             phase="open-native";NativeOverflow.TryOpen(app.Bridge.ExplorerWindow);Wait(()=>NativeOverflow.Visible,1500);
             Native.SetForegroundWindow(NativeOverflow.Window);Pump(450);phase="open-collection";app.Panel.Open();
@@ -32,13 +32,24 @@ internal static class MaterialSettingsRegression
             var surface=NativeOverflow.SurfaceBounds(NativeOverflow.Window,(int)Math.Round(4*app.Panel.DeviceDpi/96.0));
             checks["SynchronizedPanelsBottomAlign"]=app.Panel.Bottom==surface.Bottom;
             File.WriteAllText(Path.Combine(root,"paired-geometry.json"),JsonSerializer.Serialize(new{Native=Native.Rect(nativeRect),Surface=surface,Panel=app.Panel.Bounds,Entry=app.Panel.EntryRectangle,app.Panel.IsOpening,app.Panel.DragPreview},DiagnosticStore.JsonOptions));
-            using(var bitmap=new Bitmap(bounds.Width,bounds.Height)){using(var graphics=Graphics.FromImage(bitmap))graphics.CopyFromScreen(bounds.Location,Point.Empty,bounds.Size);bitmap.Save(Path.Combine(root,"synchronized-panels.png"));}
-            window.Show();window.Activate();mirror.Checked=false;Wait(()=>mirror.Enabled,5000);
-            checks["DisableRestoresAndPersists"]=!mirror.Checked&&!Settings.Load().MatchPanelMaterials;
+            using(var bitmap=new Bitmap(bounds.Width,bounds.Height))
+            {
+                using(var graphics=Graphics.FromImage(bitmap))graphics.CopyFromScreen(bounds.Location,Point.Empty,bounds.Size);
+                bitmap.Save(Path.Combine(root,"synchronized-panels.png"));
+                int left=app.Panel.Left-bounds.Left, top=app.Panel.Top-bounds.Top;
+                var contrasts=Enumerable.Range(12,app.Panel.Width-24).Select(x=>{
+                    var edge=bitmap.GetPixel(left+x,top);
+                    var inside=bitmap.GetPixel(left+x,top+2);
+                    return Math.Abs((edge.R+edge.G+edge.B-inside.R-inside.G-inside.B)/3);
+                }).Order().ToArray();
+                checks["NoBrightCollectionOutline"]=SystemInformation.HighContrast||contrasts[contrasts.Length/2]<12;
+            }
+            window.Show();window.Activate();WebSettingsTest.Set(window,"MatchPanelMaterials",false);
+            checks["DisableRestoresAndPersists"]=!WebSettingsTest.Checked(window,"MatchPanelMaterials")&&!Settings.Load().MatchPanelMaterials;
             window.Close();
         }
         catch(Exception error){errors.Add(phase+": "+error);File.WriteAllText(Path.Combine(root,"failure-state.json"),JsonSerializer.Serialize(new{Phase=phase,NativeVisible=NativeOverflow.Visible,PanelVisible=app.Panel.Visible,app.Panel.IsAnimating,app.Panel.IsPreparing,app.Panel.IsDismissing,Geometry=app.Panel.PresentationGeometry},DiagnosticStore.JsonOptions));}
-        bool passed=errors.Count==0&&checks.Count==8&&checks.Values.All(value=>value);
+        bool passed=errors.Count==0&&checks.Count==9&&checks.Values.All(value=>value);
         File.WriteAllText(Path.Combine(root,"material-settings-test.json"),JsonSerializer.Serialize(new{Passed=passed,Checks=checks,Errors=errors},DiagnosticStore.JsonOptions));return passed?0:1;
     }
     private static void Wait(Func<bool> ready,int timeout){var clock=Stopwatch.StartNew();while(!ready()&&clock.ElapsedMilliseconds<timeout)Pump(30);if(!ready())throw new TimeoutException("Material settings transaction did not finish");}

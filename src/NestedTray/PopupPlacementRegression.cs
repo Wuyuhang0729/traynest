@@ -41,7 +41,9 @@ internal static class PopupPlacementRegression
             aboveItem.PerformClick();checks["MenuAboveClickPersistsAndApplies"]=aboveItem.Checked&&!leftItem.Checked&&panel.Placement==PopupPlacement.Above&&Settings.Load().Placement==PopupPlacement.Above;
             settings.BeforeSave=()=>throw new IOException("Own menu write failure");leftItem.PerformClick();
             checks["FailedMenuClickKeepsCheckAndPanel"]=menuFailure&&aboveItem.Checked&&!leftItem.Checked&&panel.Placement==PopupPlacement.Above&&Settings.Load().Placement==PopupPlacement.Above;
-            settings.BeforeSave=null;leftItem.PerformClick();checks["MenuLeftClickPersistsAndApplies"]=leftItem.Checked&&!aboveItem.Checked&&panel.Placement==PopupPlacement.Left&&Settings.Load().Placement==PopupPlacement.Left;
+            // ToolStrip suppresses a rapid second click on the same item as a
+            // double-click. A retry after a save failure is a separate click.
+            settings.BeforeSave=null;Thread.Sleep(SystemInformation.DoubleClickTime+50);leftItem.PerformClick();checks["MenuLeftClickPersistsAndApplies"]=leftItem.Checked&&!aboveItem.Checked&&panel.Placement==PopupPlacement.Left&&Settings.Load().Placement==PopupPlacement.Left;
             CheckLayer(checks);
         }
         catch(Exception error){errors.Add(error.ToString());}

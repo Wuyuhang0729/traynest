@@ -4,6 +4,23 @@ using System.Runtime.InteropServices;
 namespace NestedTray;
 internal sealed class IconGrid:FlowLayoutPanel
 {
+    protected override CreateParams CreateParams
+    {get{var value=base.CreateParams;value.Style&=~0x02000000;return value;}} // Paint across child input HWNDs.
+    internal bool PaintingFrame;
+    internal bool PrintingTree;
+    protected override void WndProc(ref Message message)
+    {
+        if(message.Msg==0x317)
+        {PrintingTree=true;try{base.WndProc(ref message);}finally{PrintingTree=false;}return;}
+        base.WndProc(ref message);
+    }
+    internal IEnumerable<Control> BackToFront()
+    {
+        var order=new List<Control>();
+        for(nint window=Native.GetWindow(Handle,5);window!=0;window=Native.GetWindow(window,2))
+            if(Control.FromHandle(window) is { } control&&control.Parent==this&&(control.Visible||PrintingTree)&&control.Bounds.IntersectsWith(ClientRectangle))order.Add(control);
+        order.Reverse();return order;
+    }
     internal bool GlassSurface;
     protected override void OnPaintBackground(PaintEventArgs e)
     {if(GlassSurface)PanelTheme.PaintGlass(e.Graphics,ClientRectangle);else base.OnPaintBackground(e);}
@@ -19,7 +36,31 @@ internal sealed class IconGrid:FlowLayoutPanel
     private bool arranging,animateLayout;
     internal const int ReorderDurationMs=180;
     internal bool IsAnimatingOrder=>motion.Enabled;
-    internal IconGrid(){motion.Tick+=(_,_)=>DrawMotion();}
+    internal IconGrid(){DoubleBuffered=true;motion.Tick+=(_,_)=>DrawMotion();}
+    private Control? activeDrag;
+    internal bool ChangingDragZOrder{get;private set;}
+    private void RaiseNative(Control child)
+    {
+        ChangingDragZOrder=true;
+        try{Native.SetWindowPos(child.Handle,0,0,0,0,0,0x13);}
+        finally{ChangingDragZOrder=false;}
+    }
+    internal void SetActiveDrag(Control? tile)
+    {
+        activeDrag=tile;
+        if(tile==null)
+        {
+            foreach(Control child in Controls.Cast<Control>().Reverse())
+                if(child.IsHandleCreated)RaiseNative(child);
+        }
+        else KeepDragAbove();
+    }
+    private void KeepDragAbove()
+    {
+        // BringToFront changes Controls indices, which are the persisted order.
+        if(activeDrag is {IsDisposed:false,IsHandleCreated:true})
+            RaiseNative(activeDrag);
+    }
     private int contentHeight,offset;
     internal int ScrollOffset=>offset;
     internal int MaximumOffset=>Math.Max(0,contentHeight-ClientSize.Height);
@@ -59,7 +100,7 @@ internal sealed class IconGrid:FlowLayoutPanel
             motion.Stop();origins.Clear();targets.Clear();
             foreach(var pair in next){targets[pair.Key]=pair.Value;if(pair.Key.Bounds!=pair.Value)pair.Key.Bounds=pair.Value;}
         }
-        finally{arranging=false;}
+        finally{arranging=false;KeepDragAbove();}
     }
     private void DrawMotion()
     {
@@ -74,7 +115,7 @@ internal sealed class IconGrid:FlowLayoutPanel
                 pair.Key.Bounds=new Rectangle((int)Math.Round(start.X+(end.X-start.X)*ease),(int)Math.Round(start.Y+(end.Y-start.Y)*ease),end.Width,end.Height);
             }
         }
-        finally{ResumeLayout(false);arranging=false;}
+        finally{ResumeLayout(false);arranging=false;KeepDragAbove();}
         if(t>=1){motion.Stop();origins.Clear();}
     }
     public override Rectangle DisplayRectangle=>new(0,-offset,ClientSize.Width,Math.Max(ClientSize.Height,contentHeight));

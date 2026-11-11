@@ -44,7 +44,7 @@ internal sealed partial class TrayPanel
             var size=SystemInformation.DragSize;
             if(new Rectangle(pressedScreen.X-size.Width/2,pressedScreen.Y-size.Height/2,size.Width,size.Height).Contains(screen))return;
             if(tile.Tag is not IconRecord record)return;
-            internalDrag=record;tile.SuppressClick=true;tile.Reordering=true;
+            internalDrag=record;tile.SuppressClick=true;tile.Reordering=true;grid.SetActiveDrag(tile);
             reorderOriginal=grid.Controls.Cast<Control>().Select(control=>TileKey((IconRecord)control.Tag!)).ToArray();
             DragPreview=true;tips.Hide(tile);LastDragState="reordering";tile.Invalidate();
         }
@@ -89,7 +89,7 @@ internal sealed partial class TrayPanel
         int original=record==null?-1:Array.IndexOf(reorderOriginal,TileKey(record));
         tips.Hide(tile);HasOutsideReorderHint=false;
         pressedTile=null;internalDrag=null;reorderFrames.Stop();DragPreview=false;
-        tile.Reordering=false;tile.Cursor=Cursors.Default;tile.Capture=false;tile.Invalidate();
+        grid.SetActiveDrag(null);tile.Reordering=false;tile.Cursor=Cursors.Default;tile.Capture=false;tile.Invalidate();
         if(record==null)return;
         // Preview is temporary. Commit through the same transactional save used by
         // the fixed tool library, or restore the preview before a cancellation.

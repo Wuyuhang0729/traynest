@@ -68,9 +68,10 @@ internal static class NativeOverflow
         catch(System.Runtime.InteropServices.COMException){}catch(ElementNotAvailableException){}
         return Rectangle.Empty;
     }
-    internal static bool TryOpen(nint explorer)
+    internal static bool TryOpen(nint explorer)=>Visible||InvokeChevron(explorer);
+    internal static bool TryClose(nint explorer)=>!Visible||InvokeChevron(explorer);
+    private static bool InvokeChevron(nint explorer)
     {
-        if(Visible)return true;
         try
         {
             var nodes=AutomationElement.FromHandle(explorer).FindAll(TreeScope.Descendants,new PropertyCondition(AutomationElement.AutomationIdProperty,"SystemTrayIcon"));

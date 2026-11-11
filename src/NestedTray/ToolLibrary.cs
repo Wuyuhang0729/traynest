@@ -9,11 +9,13 @@ internal sealed class SavedTool
     public string Name {get;set;}="";
     public string Executable {get;set;}="";
     public string LaunchTarget {get;set;}="";
+    public string ApplicationId {get;set;}="";
+    internal int ApplicationIdOwner;
     public string IconPng {get;set;}="";
     internal SavedTool Copy()=>(SavedTool)MemberwiseClone();
     internal static SavedTool FromRecord(IconRecord record)
     {
-        var tool=new SavedTool{Rule=record.Rule,Executable=record.Executable,LaunchTarget=record.Executable,
+        var tool=new SavedTool{Rule=record.Rule,Executable=record.Executable,LaunchTarget=record.Executable,ApplicationId=ProcessExecutable.ApplicationId(record.ProcessId),
             Name=string.IsNullOrWhiteSpace(record.Tooltip)?Path.GetFileNameWithoutExtension(record.Executable):record.Tooltip};
         if(record.Image!=null)
         {
@@ -55,6 +57,8 @@ internal sealed class ToolLibrary(Settings settings):IDisposable
                 changed=true;
             }
         }
+        foreach(var tool in settings.Tools)if(string.IsNullOrEmpty(tool.ApplicationId)&&live.TryGetValue(tool.Rule,out var owner)&&tool.ApplicationIdOwner!=owner.ProcessId)
+        {tool.ApplicationIdOwner=owner.ProcessId;string id=ProcessExecutable.ApplicationId(owner.ProcessId);if(id.Length>0){tool.ApplicationId=id;changed=true;}}
         return changed;
     }
     internal IconRecord[] Snapshot(IEnumerable<IconRecord> records)
@@ -103,32 +107,37 @@ internal readonly record struct ToolLaunchStatus(ToolLaunchState State,string Me
 internal sealed class ToolLauncher
 {
     private readonly Dictionary<string,ToolLaunchStatus> states=new();
+    private readonly Dictionary<string,string> statesExecutable=new();
     internal Func<long> Clock=()=>Environment.TickCount64;
     internal Func<string,bool> IsRunning=ExecutableRunning;
     internal Action<string> Start=path=>{using var process=Process.Start(new ProcessStartInfo(path){UseShellExecute=true,WorkingDirectory=Path.GetDirectoryName(path)??""});};
     internal ToolLaunchStatus Status(string rule)
     {
         if(!states.TryGetValue(rule,out var value))return new(ToolLaunchState.Idle,"未运行或图标暂不可用；单击尝试启动，右键管理。");
+        if(value.State==ToolLaunchState.RunningWithoutIcon&&statesExecutable.TryGetValue(rule,out var executable)&&!IsRunning(executable))
+        {states.Remove(rule);statesExecutable.Remove(rule);return new(ToolLaunchState.Idle,"程序进程已退出；单击可重新启动。");}
         if(value.State is ToolLaunchState.Waiting or ToolLaunchState.RunningWithoutIcon&&Clock()>=value.Until)
             states[rule]=value=new(ToolLaunchState.TimedOut,"仍未发现图标，可右键检查启动文件。");
         return value;
     }
     internal bool IsPending(string rule)=>Status(rule).State is ToolLaunchState.Waiting or ToolLaunchState.RunningWithoutIcon;
-    internal void Registered(string rule)=>states.Remove(rule);
+    internal void Registered(string rule){states.Remove(rule);statesExecutable.Remove(rule);}
     private ToolLaunchResult Result(string rule,ToolLaunchState state,string message,bool started=false)
     {states[rule]=new(state,message,state is ToolLaunchState.Waiting or ToolLaunchState.RunningWithoutIcon?Clock()+12000:0);return new(started,message);}
     internal ToolLaunchResult Launch(SavedTool tool)
     {
         if(IsPending(tool.Rule))return new(false,Status(tool.Rule).Message);
+        statesExecutable[tool.Rule]=tool.Executable;
         string path=tool.LaunchTarget;
-        if(!Path.IsPathFullyQualified(path)||!File.Exists(path)||!(Path.GetExtension(path).Equals(".exe",StringComparison.OrdinalIgnoreCase)||Path.GetExtension(path).Equals(".lnk",StringComparison.OrdinalIgnoreCase)))
+        bool packaged=!string.IsNullOrEmpty(tool.ApplicationId)&&string.Equals(path,tool.Executable,StringComparison.OrdinalIgnoreCase);
+        if(!packaged&&(!Path.IsPathFullyQualified(path)||!File.Exists(path)||!(Path.GetExtension(path).Equals(".exe",StringComparison.OrdinalIgnoreCase)||Path.GetExtension(path).Equals(".lnk",StringComparison.OrdinalIgnoreCase))))
             return Result(tool.Rule,ToolLaunchState.InvalidTarget,"无法从此处启动。请右键此图标设置有效的程序或快捷方式。");
         try
         {
-            if(IsRunning(tool.Executable))return Result(tool.Rule,ToolLaunchState.RunningWithoutIcon,"程序已经运行，但暂未发现对应的托盘图标。请稍后查看或从程序窗口打开。");
-            Start(path);return Result(tool.Rule,ToolLaunchState.Waiting,"正在启动，等待图标回到原位。",true);
+            if(IsRunning(tool.Executable))return Result(tool.Rule,ToolLaunchState.RunningWithoutIcon,"检测到该程序的进程，但尚未发现托盘图标；不代表程序已正常启动。");
+            if(packaged)PackagedTool.Start(tool.ApplicationId);else Start(path);return Result(tool.Rule,ToolLaunchState.Waiting,"正在启动，等待图标回到原位。",true);
         }
-        catch(Exception error)when(error is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception or InvalidOperationException or System.Security.SecurityException)
+        catch(Exception error)when(error is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception or InvalidOperationException or System.Security.SecurityException or System.Runtime.InteropServices.COMException)
         {AppDiagnostics.Error("TN4101",error);return Result(tool.Rule,ToolLaunchState.Failed,"启动未成功。请检查启动文件，或从开始菜单打开该软件。");}
     }
     private static bool ExecutableRunning(string executable)
@@ -136,7 +145,7 @@ internal sealed class ToolLauncher
         if(!Path.IsPathFullyQualified(executable))return false;
         foreach(var process in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(executable)))
         {
-            using(process)try{if(string.Equals(process.MainModule?.FileName,executable,StringComparison.OrdinalIgnoreCase))return true;}catch(Exception error)when(error is System.ComponentModel.Win32Exception or InvalidOperationException or NotSupportedException){}
+            using(process)try{if(string.Equals(ProcessExecutable.Read(process.Id),executable,StringComparison.OrdinalIgnoreCase))return true;}catch(Exception error)when(error is System.ComponentModel.Win32Exception or InvalidOperationException or NotSupportedException){}
         }
         return false;
     }

@@ -18,6 +18,7 @@ internal sealed class TrayBridge:IDisposable
     private readonly Native.Procedure procedure;
     private readonly nint module=Native.GetModuleHandleW(null);
     private nint explorer,receiver;
+    private TaskbarGeometryFacade? geometryFacade;
     private bool changingState,disposing,faulted;
     private readonly TransientTrayConnection forwarding=new();
     internal bool Reconnecting=>forwarding.Pending;
@@ -34,6 +35,8 @@ internal sealed class TrayBridge:IDisposable
     {
         explorer=Native.FindWindowW("Shell_TrayWnd",null);
         Native.GetWindowThreadProcessId(explorer,out uint owner);
+        if(owner!=0&&Path.GetFileName(ProcessExecutable.Read((int)owner)).Equals("RetroBar.exe",StringComparison.OrdinalIgnoreCase))
+            throw new TrayNestException("TN1005");
         if(explorer==0||!Process.GetProcessById((int)owner).ProcessName.Equals("explorer",StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("没有找到原生 Explorer 托盘，或已有其他托盘接管程序运行。请先退出其他托盘管理工具。");
         if(!Native.GetWindowRect(explorer,out var rect))throw new InvalidOperationException("无法读取系统任务栏位置。");
@@ -41,6 +44,7 @@ internal sealed class TrayBridge:IDisposable
         if(Native.RegisterClassW(ref cls)==0)throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
         receiver=Native.CreateWindowExW(0x08000088,cls.ClassName,"NestedTray message receiver",0x80000000,rect.Left,rect.Top,rect.Right-rect.Left,rect.Bottom-rect.Top,0,0,module,0);
         if(receiver==0)throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        geometryFacade=new TaskbarGeometryFacade(receiver,explorer);
         if(Native.FindWindowW("Shell_TrayWnd",null)!=receiver)throw new InvalidOperationException("托盘消息入口不可用，已停止启动。");
     }
     internal bool ExplorerAlive=>explorer!=0&&Native.IsWindow(explorer);
@@ -49,6 +53,7 @@ internal sealed class TrayBridge:IDisposable
     {
         if(disposing||receiver==0)return;
         if(!ExplorerAlive){Fail("TN2003");return;}
+        geometryFacade?.Refresh();
         if(forwarding.Pending)
         {
             bool recovered=forwarding.Probe(Environment.TickCount64,()=>Native.SendMessageTimeoutW(explorer,0,0,0,0x22,150,out _)!=0);
@@ -141,6 +146,7 @@ internal sealed class TrayBridge:IDisposable
                                 // An update may arrive before registration; keep it until callback data arrives.
                                 string exe=System.Text.Encoding.Unicode.GetString(bytes,964,520).Split('\0')[0];
                                 if(string.IsNullOrWhiteSpace(exe))exe=ProcessExecutable.Read((int)process);
+                                exe=ExecutableIdentity.Normalize(exe);
                                 string rule=exe.ToLowerInvariant()+"|"+(packet.Guid!=Guid.Empty?"g:"+packet.Guid.ToString("D"):"i:"+packet.Id);
                                 record=new IconRecord{Key=key,Rule=rule,Executable=exe,Window=packet.Window,Id=packet.Id,Guid=packet.Guid,ProcessId=(int)process};
                                 Icons.Add(key,record);
@@ -311,6 +317,7 @@ internal sealed class TrayBridge:IDisposable
         try
         {
             // Remove only our receiver first; restoration then goes directly to real Explorer.
+            geometryFacade?.Dispose();geometryFacade=null;
             if(receiver!=0){Native.DestroyWindow(receiver);receiver=0;}
             Native.UnregisterClassW("Shell_TrayWnd",module);
             foreach(var record in Icons.Values.Where(value=>value.Selected).ToArray())

@@ -64,6 +64,7 @@ internal sealed class FixtureWindow : NativeWindow, IDisposable
             if (!ok) File.AppendAllText(Path.Combine(directory, "fixture-errors.log"), "NIM_MODIFY failed\n");
         };
         timeout.Tick += (_, _) => Application.ExitThread();
+        if(int.TryParse(Environment.GetEnvironmentVariable("TRAYNEST_FIXTURE_TIMEOUT_MS"),out int ownTimeout))timeout.Interval=Math.Clamp(ownTimeout,30000,120000);
         timer.Start(); timeout.Start();
     }
 

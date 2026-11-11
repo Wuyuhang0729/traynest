@@ -8,7 +8,9 @@ internal sealed record NativePanelSnapshot(nint Window,Rectangle Host,Rectangle 
 internal sealed class NativePanelGeometry:IDisposable
 {
     private Task<NativePanelSnapshot?>? measuring;
+    private int cycle, measuringCycle;
     private NativePanelSnapshot? latest;
+    private NativePanelSnapshot? candidate;
     private nint observedWindow;
     private Rectangle observedHost;
     private long visibleSince,stableSince,nextSample,refreshUntil;
@@ -17,6 +19,14 @@ internal sealed class NativePanelGeometry:IDisposable
     internal NativePanelSnapshot? Latest=>latest;
     internal long VisibleSince=>visibleSince;
     internal void Refresh()=>refreshUntil=Environment.TickCount64+700;
+    internal void InterruptMeasurement()
+    {
+        // Keep the last settled surface. Discard samples spanning a direction change.
+        cycle++;
+        candidate=null;
+        stableSince=visibleSince=Environment.TickCount64;
+        Refresh();
+    }
     internal void Tick(bool allowMeasurement)
     {
         if(disposed)return;
@@ -24,19 +34,21 @@ internal sealed class NativePanelGeometry:IDisposable
         if(window==0||!Native.IsWindowVisible(window)||!Native.GetWindowRect(window,out var raw))
         {observedWindow=0;visibleSince=0;return;}
         var host=Native.Rect(raw);
-        if(window!=observedWindow){observedWindow=window;observedHost=host;visibleSince=now;stableSince=now;Refresh();}
+        if(window!=observedWindow){cycle++;candidate=null;observedWindow=window;observedHost=host;visibleSince=now;stableSince=now;Refresh();}
         if(observedHost!=host){observedHost=host;stableSince=now;Refresh();}
         if(measuring is {IsCompleted:true})
         {
             var sample=measuring.GetAwaiter().GetResult();measuring=null;
-            if(sample!=null&&sample.Window==window&&sample.Host==host)
+            if(measuringCycle==cycle&&sample!=null&&sample.Window==window&&sample.Host==host)
             {
-                if(latest==null||sample.Surface!=latest.Surface||sample.Layout!=latest.Layout||!latest.Measured)stableSince=now;
-                latest=sample;
+                // Explorer reports moving icon bounds inside a stationary host during a slide.
+                if(candidate==sample)latest=sample;
+                else stableSince=now;
+                candidate=sample;
             }
         }
-        if(!allowMeasurement||measuring!=null||now<nextSample||now>refreshUntil&&latest is {Measured:true}&&latest.Host==host)return;
-        nextSample=now+65;measuring=Task.Run(()=>Measure(window,host));
+        if(!allowMeasurement||measuring!=null||now-visibleSince<NativeEntranceGuardMs||now<nextSample||now>refreshUntil&&latest is {Measured:true}&&latest.Host==host)return;
+        measuringCycle=cycle;nextSample=now+65;measuring=Task.Run(()=>Measure(window,host));
     }
     internal NativePanelSnapshot? CachedOrEstimate()
     {

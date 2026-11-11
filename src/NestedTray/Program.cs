@@ -6,6 +6,36 @@ internal static class Program
 {
     [STAThread]private static int Main(string[] args)
     {
+        if(args.Length==2&&args[0]=="--self-test-entry-policy")return EntryPolicyRegression.Run(args[1]);
+        if(args.Length==2&&args[0]=="--opening-foreground")
+        {Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);Application.EnableVisualStyles();return OpeningRegression.Foreground(args[1]);}
+        if(args.Length==2&&args[0] is "--self-test-opening" or "--self-test-opening-desktop")
+        {Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);return OpeningRegression.Run(args[1],args[0]=="--self-test-opening-desktop");}
+        if(args.Length==2&&args[0]=="--self-test-frame-paint")
+        {Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);return FramePaintRegression.Run(args[1]);}
+        if(args.Length==2&&args[0]=="--self-test-presentation-handoff")
+        {Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);return PresentationHandoffRegression.Run(args[1]);}
+        if(args.Length==2&&args[0]=="--self-test-motion-clip")
+        {Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);return MotionClipRegression.Run(args[1]);}
+        if(args.Length==2&&args[0]=="--self-test-issue-probe"){Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);Application.EnableVisualStyles();return IssueProbe.Run(args[1]);}
+        if(args.Length==3&&args[0]=="--self-test-tray-owner")return TaskbarLayerRegression.RunTrayOwner(args[1],args[2]);
+        if(args.Length==2&&args[0]=="--self-test-taskbar-layer")
+        {Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);return TaskbarLayerRegression.Run(args[1]);}
+        if(args.Length==2&&args[0]=="--self-test-motion-footer")
+        {Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);return MotionFooterRegression.Run(args[1]);}
+        if(args.Length==2&&args[0]=="--self-test-static-footer")
+        {Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);return StaticFooterRegression.Run(args[1]);}
+        if(args.Length==3&&args[0]=="--self-test-native-drag-feedback")
+        {Environment.SetEnvironmentVariable("NESTEDTRAY_TEST_PROFILE",Path.GetFullPath(args[1]));Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);return NativeDragFeedbackRegression.Run(args[2]);}
+        if(args.Length==2&&args[0]=="--self-test-icon-feedback")
+        {Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);return IconFeedbackRegression.Run(args[1]);}
+        if(args.Length==2&&args[0]=="--self-test-icon-reversal")
+        {
+            Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+            return IconReversalRegression.Run(args[1]);
+        }
         if(args.Length==2&&args[0]=="--self-test-presentation")
         {Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);return PresentationRegression.Run(args[1]);}
         if(args.Length==2&&args[0]=="--self-test-material-settings")
@@ -79,7 +109,10 @@ internal static class Program
         try
         {
             AppDiagnostics.Info("TN0001",new(){["LaunchMode"]=args.Contains("--startup")?"Logon":"Manual"});CompatibilityProbe.EnsureStartup(args.Contains("--startup"));
-            using var app=new TrayApplication();running=app;Application.Run(app);return failing?1:0;
+            using var app=new TrayApplication();running=app;
+            using var maintenance=new MaintenanceEndpoint(()=>app.Shutdown());
+            maintenance.Start();MaintenanceEndpoint.SignalReady(args);
+            Application.Run(app);return failing?1:0;
         }
         catch(Exception error)
         {DiagnosticUi.Error(error is TrayNestException known?known.Code:"TN1003",error);return 1;}
@@ -90,6 +123,7 @@ internal static class Program
 internal sealed class TrayApplication:ApplicationContext
 {
     private readonly Settings settings=Settings.Load();
+    private UpdateController? updates;
     private readonly RecoveryJournal recovery=new();
     private readonly TrayPanel panel=new();
     private readonly ToolLibrary library;
@@ -101,7 +135,7 @@ internal sealed class TrayApplication:ApplicationContext
     private readonly System.Windows.Forms.Timer timer=new(){Interval=30};
     private readonly System.Windows.Forms.Timer discovery=new(){Interval=1500};
     private readonly ContextMenuStrip menu=new();
-    private readonly Form menuOwner=new(){ShowInTaskbar=false,FormBorderStyle=FormBorderStyle.None,StartPosition=FormStartPosition.Manual,Size=new Size(1,1),Opacity=0};
+    private readonly Form menuOwner=new(){TopMost=true,ShowInTaskbar=false,FormBorderStyle=FormBorderStyle.None,StartPosition=FormStartPosition.Manual,Size=new Size(1,1),Opacity=0};
     private IconRecord? candidate;
     private IconRecord? releasedCandidate;
     private readonly System.Windows.Forms.Timer finishDrag=new(){Interval=150};
@@ -125,10 +159,50 @@ internal sealed class TrayApplication:ApplicationContext
     private readonly NativePanelGeometry nativeGeometry=new();
     private bool refreshPanelPending;
     private readonly NativeMaterialController nativeMaterial=new();
+    private OverflowVisibilityObserver? overflowObserver;
     private bool updatingMaterial;
     private bool changingMaterialSettings;
     private long materialRetryAfter;
     private SettingsWindow? settingsWindow;
+    private readonly GlobalShortcut shortcut=new();
+    private bool shortcutAvailable=true,collectionOnlyCycle;
+    private OpeningMode appliedMode;
+    private Task<Rectangle>? blankPress;
+    private nint blankWindow;
+    private int blankGeneration;
+    private readonly BlankCellDoubleClick blankDoubleClick=new();
+    private Task<Rectangle>? blankFirstLookup;
+    private OpeningMode? placementAppliedMode;
+    private void ResetBlankGesture(){blankPress=null;blankFirstLookup=null;blankDoubleClick.Reset();++blankGeneration;}
+    private async void CompleteBlankClick(Point point,long observedAt)
+    {
+        var pending=blankPress;blankPress=null;int generation=blankGeneration;var window=blankWindow;
+        if(pending==null||candidate!=null){blankDoubleClick.Reset();blankFirstLookup=null;return;}
+        if(!blankDoubleClick.Observe(window,point,observedAt,SystemInformation.DoubleClickTime,SystemInformation.DoubleClickSize,out var firstPoint)){blankFirstLookup=pending;return;}
+        pending=blankFirstLookup??pending;blankFirstLookup=null;
+        try
+        {
+            var slot=await pending.WaitAsync(TimeSpan.FromMilliseconds(1200));
+            if(stopping||generation!=blankGeneration||settings.OpeningMode!=OpeningMode.Linked||!settings.BlankCellOpens||slot.IsEmpty||!slot.Contains(firstPoint)||!slot.Contains(point)||candidate!=null||releasedCandidate!=null||panel.IsReordering||HasContextPopup())return;
+            var confirmed=await OverflowBlankCell.FindAsync(point,window).WaitAsync(TimeSpan.FromMilliseconds(1200));
+            if(stopping||generation!=blankGeneration||settings.OpeningMode!=OpeningMode.Linked||!settings.BlankCellOpens||menu.Visible||offlineMenu.Visible||candidate!=null||releasedCandidate!=null||panel.IsReordering||HasContextPopup()||confirmed!=slot||!NativeOverflow.Visible||NativeOverflow.Window!=window||Native.GetAncestor(Native.WindowFromPoint(new Native.Point{X=point.X,Y=point.Y}),2)!=window)return;
+            autoExpand.SuppressCurrentCycle(NativeOverflow.Visible);collectionOnlyCycle=false;UpdateEntryBounds();panel.NativeEntryRectangle=chevronBounds;
+            if(panel.WantsVisible){panel.Dismiss();return;}
+            panel.Open(waitForNative:settings.ExpansionOrder==NativeExpansionOrder.AfterNative,simultaneous:settings.ExpansionOrder==NativeExpansionOrder.Simultaneous);
+        }
+        catch(TimeoutException){}catch(Exception error){AppDiagnostics.Warn("TN1101",error:error);}
+    }
+    private void ToggleShortcut()
+    {
+        if(stopping||settingsWindow is {RecordingShortcut:true,Visible:true}||candidate!=null||releasedCandidate!=null||panel.IsReordering||menu.Visible||offlineMenu.Visible||HasContextPopup())return;
+        autoExpand.SuppressCurrentCycle(NativeOverflow.Visible);UpdateEntryBounds();
+        if(panel.WantsVisible){bool closeBoth=settings.OpeningMode==OpeningMode.Linked&&settings.ShortcutBothPanels;panel.Dismiss();if(closeBoth)NativeOverflow.TryClose(bridge!.ExplorerWindow);return;}
+        bool both=settings.OpeningMode==OpeningMode.Linked&&settings.ShortcutBothPanels;
+        collectionOnlyCycle=!both;
+        if(both&&!NativeOverflow.TryOpen(bridge!.ExplorerWindow))return;
+        panel.NativeEntryRectangle=chevronBounds;
+        panel.Open(waitForNative:both&&settings.ExpansionOrder==NativeExpansionOrder.AfterNative,simultaneous:both&&settings.ExpansionOrder==NativeExpansionOrder.Simultaneous);
+    }
     private int ticks;
     private readonly long launchedAt=Environment.TickCount64;
     private int startupCheckpoints;
@@ -146,7 +220,8 @@ internal sealed class TrayApplication:ApplicationContext
         _=panel.Handle;
         try
         {
-            recovery.Start();entry=new EntryIcon();bridge=new TrayBridge(settings,recovery);
+            recovery.Start();entry=new EntryIcon(settings.OpeningMode);bridge=new TrayBridge(settings,recovery);
+            shortcut.Pressed=ToggleShortcut;shortcutAvailable=shortcut.Restore(settings.Shortcut);
             entry.DiagnosticsRequested=SaveDiagnostics;
             entry.SettingsRequested=()=>Guard(ShowSettings);
             if(testMode)bridge.AllowedOwners=new();
@@ -165,7 +240,7 @@ internal sealed class TrayApplication:ApplicationContext
                 var problem=AppDiagnostics.Error(code,error);Stop();if(DiagnosticUi.OpenWindows==0)DiagnosticUi.Show(problem);
             }));
             bridge.Bounds=record=>panel.CellBounds(record);
-            entry.Open=()=>{autoExpand.SuppressCurrentCycle(NativeOverflow.Visible);UpdateEntryBounds();if(panel.WantsVisible)panel.Dismiss();else panel.Open();};
+            entry.Open=()=>{collectionOnlyCycle=false;autoExpand.SuppressCurrentCycle(NativeOverflow.Visible);UpdateEntryBounds();if(panel.WantsVisible)panel.Dismiss();else panel.Open();entry.SetExpanded(panel.WantsVisible);};
             entry.Menu=()=>ShowMenu();
             // The standard refresh broadcast also reaches this window, so restart detection
             // is based on the actual Explorer handle rather than the message alone.
@@ -190,23 +265,29 @@ internal sealed class TrayApplication:ApplicationContext
             };
             finishDrag.Tick+=(_,_)=>CompleteNativeDrop();
             panel.RemoveIcon=record=>Guard(()=>{if(record.IsOffline){library.Forget(record.Rule);RefreshPanel();}else bridge.Restore(record);});panel.OpenMenu=ShowMenu;
-            panel.DismissStarted=()=>{autoExpand.SuppressCurrentCycle(NativeOverflow.Visible);pairedWithOverflow=false;restoreOverflowUntil=0;contextIcon=null;};
+            panel.DismissStarted=()=>{entry?.SetExpanded(false);autoExpand.SuppressCurrentCycle(NativeOverflow.Visible);pairedWithOverflow=false;restoreOverflowUntil=0;contextIcon=null;};
             panel.VisibleChanged+=(_,_)=>{pairedWithOverflow=panel.Visible&&NativeOverflow.Visible;ignoreNativeCloseForPanelInteraction=false;panelOpenedUntil=Environment.TickCount64+700;if(!panel.Visible){restoreOverflowUntil=0;contextIcon=null;}};
             BuildMenu();bridge.Start();panel.TaskbarWindow=bridge.ExplorerWindow;chevronBounds=NativeOverflow.ChevronBounds(bridge.ExplorerWindow);
+            overflowObserver=new(bridge.ExplorerWindow,shown=>{
+                if(stopping||settings.OpeningMode==OpeningMode.Independent||!settings.FollowNativeOverflow)return;
+                if(!shown){autoExpand.NativeHidden();nativeGeometry.InterruptMeasurement();}
+            });
             AppDiagnostics.State=DiagnosticState;
             if(!panel.CoreDrop.Registered)AppDiagnostics.Warn("TN1102");
             drag=new DragObserver(panel);
-            drag.Down=PointerDown;drag.Up=PointerUp;drag.OtherDown=OtherPointerDown;
+            drag.Down=PointerDown;drag.Up=(point,at)=>PointerUp(point,at);drag.OtherDown=OtherPointerDown;drag.CancelClick=ResetBlankGesture;
             timer.Tick+=(_,_)=>
             {
+                entry?.SetExpanded(panel.WantsVisible);
                 if(bridge!=null&&!bridge.ExplorerAlive){Restart();return;}
                 nativeGeometry.Tick(!panel.IsAnimating&&candidate==null&&releasedCandidate==null&&!panel.IsReordering&&(Native.GetAsyncKeyState(1)&0x8000)==0);
+                if(refreshPanelPending){refreshPanelPending=false;RefreshPanel(true);}
                 if(panel.IsAnimating)
                 {
+                    if(panel.IsDismissing)UpdateAutomaticExpansion();
                     if((Native.GetAsyncKeyState((int)Keys.Escape)&0x8000)!=0)panel.Dismiss();
                     SyncOverflowVisibility();return;
                 }
-                if(refreshPanelPending){refreshPanelPending=false;RefreshPanel();}
                 bridge?.Maintain();if(bridge?.Reconnecting==true)return;
                 if(!testMode&&startupCheckpoints<2&&Environment.TickCount64-launchedAt>=(startupCheckpoints==0?5000:30000))
                 {
@@ -217,6 +298,7 @@ internal sealed class TrayApplication:ApplicationContext
                 if(ticks%33==0&&panel.Visible)panel.RefreshToolStates();
                 if((candidate!=null||releasedCandidate!=null)&&(Native.GetAsyncKeyState((int)Keys.Escape)&0x8000)!=0){cancelledDrag=true;candidate=null;releasedCandidate=null;finishDrag.Stop();panel.DragPreview=false;panel.SetIncomingIcon(null);}
                 bool escape=(Native.GetAsyncKeyState((int)Keys.Escape)&0x8000)!=0;
+                if(escape&&!escapeWasDown)ResetBlankGesture();
                 bool reorderEscape=panel.HandleReorderEscape(escape);
                 if(!reorderEscape&&escape&&!escapeWasDown&&menu.Visible)menu.Close(ToolStripDropDownCloseReason.Keyboard);
                 else if(!reorderEscape&&escape&&!escapeWasDown&&(panel.Visible||panel.IsPreparing)&&!cancelledDrag&&!IsContextSurface(Native.GetForegroundWindow()))panel.Dismiss();
@@ -234,19 +316,23 @@ internal sealed class TrayApplication:ApplicationContext
                 panel.FollowNativeBounds();
                 if(ticks%8==0&&panel.Visible&&!menu.Visible&&DiagnosticUi.OpenWindows==0&&!HasContextPopup())panel.EnsureAboveApplications();
             };
-            timer.Start();discovery.Tick+=(_,_)=>{discovery.Stop();bridge?.RefreshExisting();};if(!testMode)discovery.Start();
+            timer.Start();discovery.Tick+=(_,_)=>{discovery.Stop();bridge?.RefreshExisting();};if(!testMode){discovery.Start();EnsureUpdates();}
         }
         catch {Stop();throw;}
     }
     internal void PointerDown(Point point,nint sourceRoot,bool nativeVisibleOnPress,long observedAt=0)
     {
+        blankPress=null;++blankGeneration;
         if(HandleOwnMenuPress(point,false,observedAt))return;
+        if(settings.OpeningMode==OpeningMode.Linked&&settings.BlankCellOpens&&nativeVisibleOnPress&&sourceRoot==NativeOverflow.Window&&!menu.Visible&&!offlineMenu.Visible&&!HasContextPopup())
+        {blankWindow=sourceRoot;blankPress=blankDoubleClick.CanPair(sourceRoot,point,observedAt>0?observedAt:Environment.TickCount64,SystemInformation.DoubleClickTime,SystemInformation.DoubleClickSize)&&blankFirstLookup!=null?blankFirstLookup:OverflowBlankCell.FindAsync(point,sourceRoot);}
+        else{blankDoubleClick.Reset();blankFirstLookup=null;}
         finishDrag.Stop();releasedCandidate=null;cancelledDrag=false;panel.SetIncomingIcon(null);restoreOverflowUntil=0;
         initialDragEnters=panel.ExternalDragEnters;initialDrops=panel.ExternalDrops;
         initialCoreEnters=panel.CoreDrop.Enters;initialCoreDrops=panel.CoreDrop.Drops;
         candidate=null;down=point;
-        if((panel.Visible||panel.IsPreparing)&&nativeVisibleOnPress&&sourceRoot==bridge!.ExplorerWindow&&chevronBounds.Contains(point))
-        {TraceDrag("native-chevron-close-start",new{BeforeNativeHidden=true});panel.Dismiss();return;}
+        chevronClosePending=settings.OpeningMode==OpeningMode.Linked&&!collectionOnlyCycle&&(panel.Visible||panel.IsPreparing)&&nativeVisibleOnPress&&sourceRoot==bridge!.ExplorerWindow&&chevronBounds.Contains(point);
+        if(chevronClosePending)return;
         // Controls handle their own MouseDown synchronously. The hook's queued copy
         // may arrive after MouseUp has opened a new application menu.
         if(sourceRoot==panel.Handle||panel.IsDropSurface(point))return;
@@ -263,12 +349,19 @@ internal sealed class TrayApplication:ApplicationContext
             candidate??=available.FirstOrDefault(record=>record.NativeBounds.Contains(point));
             if(candidate is {CanCollect:false})NativeTray.PostMessage(candidate.Window,Native.RegisterWindowMessageW("TaskbarCreated"),0,0);
         }
-        if(panel.Visible&&candidate==null&&!panel.EntryRectangle.Contains(point)&&!fromSystemTray&&!IsContextSurface(sourceRoot)&&!IsOwnPopup(sourceRoot))
+        if(panel.Visible&&candidate==null&&!panel.EntryRectangle.Contains(point)&&(!fromSystemTray||settings.OpeningMode==OpeningMode.Independent||collectionOnlyCycle)&&!IsContextSurface(sourceRoot)&&!IsOwnPopup(sourceRoot))
         {TraceDrag("outside-click-close",new{Point=point.ToString(),Class=WindowClass(sourceRoot),PanelBounds=panel.Bounds.ToString()});panel.Dismiss();}
         if(fromSystemTray||panel.Visible)TraceDrag("down",new {Point=point.ToString(),SourceClass=WindowClass(sourceRoot),FromSystemTray=fromSystemTray,KnownIcons=bridge.Icons.Count,Candidate=candidate==null?null:new {Process=candidate.ProcessId,candidate.CanCollect,candidate.RegistrationKnown,candidate.Callback}});
     }
-    internal void PointerUp(Point point)
+    private bool chevronClosePending;
+    internal void PointerUp(Point point,long observedAt=0)
     {
+        CompleteBlankClick(point,observedAt>0?observedAt:Environment.TickCount64);
+        if(chevronClosePending)
+        {
+            chevronClosePending=false;
+            if(chevronBounds.Contains(point))panel.Dismiss();
+        }
         UpdateEntryBounds();
         var item=candidate;candidate=null;bool moved=Math.Abs(point.X-down.X)+Math.Abs(point.Y-down.Y)>=SystemInformation.DragSize.Width;
         bool dropping=item!=null&&moved&&((panel.Visible&&panel.Bounds.Contains(point))||panel.EntryRectangle.Contains(point));
@@ -297,12 +390,13 @@ internal sealed class TrayApplication:ApplicationContext
         {if(AppDiagnostics.Warn("TN2101")!=null)entry?.Notify("TN2101");}
         panel.DragPreview=false;panel.SetIncomingIcon(null);
         panel.RequestRealignment();
-        if(record?.Selected==true&&panel.Visible&&sourceWasOverflow)
+        if(settings.OpeningMode==OpeningMode.Linked&&record?.Selected==true&&panel.Visible&&sourceWasOverflow)
         {pairedWithOverflow=true;restoreOverflowUntil=Environment.TickCount64+800;restoreOverflowRequested=false;}
         TraceDrag("complete",new {HasCandidate=record!=null,CanCollect=record?.CanCollect,Selected=record?.Selected,OntoPanel=ontoPanel,OleAccepted=oleAccepted,Cancelled=cancelledDrag});
     }
     private void SyncOverflowVisibility()
     {
+        if(settings.OpeningMode==OpeningMode.Independent||collectionOnlyCycle)return;
         if(panel.IsPreparing&&!NativeOverflow.Visible){panel.Dismiss();return;}
         if(!panel.Visible||panel.IsDismissing)return;
         long now=Environment.TickCount64;bool visible=NativeOverflow.Visible;
@@ -324,21 +418,23 @@ internal sealed class TrayApplication:ApplicationContext
     private void UpdateAutomaticExpansion()
     {
         bool nativeVisible=NativeOverflow.Visible;
-        bool blocked=candidate!=null||releasedCandidate!=null||panel.IsReordering||panel.HasReorderPreview||panel.IsDismissing||
+        bool blocked=candidate!=null||releasedCandidate!=null||panel.IsReordering||panel.HasReorderPreview||(panel.IsDismissing&&!settings.FollowNativeOverflow)||
             (Native.GetAsyncKeyState(1)&0x8000)!=0||(Native.GetAsyncKeyState(2)&0x8000)!=0||menu.Visible||offlineMenu.Visible||
-            settingsWindow is {Visible:true,WindowState:not FormWindowState.Minimized}||DiagnosticUi.OpenWindows>0||HasContextPopup();
+            DiagnosticUi.OpenWindows>0||HasContextPopup();
         bool overEntry=Native.GetCursorPos(out var pointer)&&panel.EntryRectangle.Contains(new Point(pointer.X,pointer.Y));
-        var reason=autoExpand.Evaluate(Environment.TickCount64,settings.FollowNativeOverflow,settings.HoverToOpen,nativeVisible,panel.Visible||panel.IsPreparing,overEntry,blocked);
+        var reason=autoExpand.Evaluate(Environment.TickCount64,settings.OpeningMode==OpeningMode.Linked&&settings.FollowNativeOverflow,settings.HoverToOpen,nativeVisible,panel.WantsVisible,overEntry,blocked);
         if(reason==AutoExpandReason.None)return;
         UpdateEntryBounds();
-        bool following=reason==AutoExpandReason.NativeOverflow;
+        collectionOnlyCycle=false;bool following=reason==AutoExpandReason.NativeOverflow;
+        panel.NativeEntryRectangle=chevronBounds;
         panel.Open(waitForNative:following&&settings.ExpansionOrder==NativeExpansionOrder.AfterNative,simultaneous:following&&settings.ExpansionOrder==NativeExpansionOrder.Simultaneous);
         if(nativeVisible)pairedWithOverflow=true;
         TraceDrag("auto-expand",new{Reason=reason.ToString()});
     }
     private void ShowSettings()
     {
-        menu.Close();offlineMenu.Close();autoExpand.SuppressCurrentCycle(NativeOverflow.Visible);panel.Dismiss();
+        ResetBlankGesture();menu.Close();offlineMenu.Close();autoExpand.SuppressCurrentCycle(NativeOverflow.Visible);
+        panel.Hide();
         if(settingsWindow==null||settingsWindow.IsDisposed)
         {
             settingsWindow=new SettingsWindow(settings,RefreshPanel,()=>Settings.StartupEnabled,value=>Settings.StartupEnabled=value);
@@ -347,11 +443,41 @@ internal sealed class TrayApplication:ApplicationContext
             settingsWindow.RefreshIconsRequested=()=>Guard(()=>bridge?.RefreshExisting());
             settingsWindow.RestoreAllRequested=()=>Guard(RestoreAllIcons);
             settingsWindow.ExitRequested=Stop;
+            EnsureUpdates();
+            settingsWindow.ReadUpdate=()=>updates!.View;
+            settingsWindow.UpdateRequested=UpdateAction;
             settingsWindow.ChangeMaterialSync=ChangeMaterialSyncAsync;
+            settingsWindow.ChangeShortcut=(key,both)=>{shortcut.Change(settings,key,both);shortcutAvailable=true;};
         }
         else settingsWindow.RefreshValues();
         if(settingsWindow.WindowState==FormWindowState.Minimized)settingsWindow.WindowState=FormWindowState.Normal;
         settingsWindow.Show();settingsWindow.Activate();
+        if(!shortcutAvailable)settingsWindow.ShowOperationStatus("保存的快捷键被占用，尚未启用；请选择其他组合。",true);
+    }
+    private void EnsureUpdates()
+    {
+        if(updates!=null)return;
+        updates=new UpdateController(settings);
+        updates.Changed+=()=>settingsWindow?.RefreshUpdate();
+        updates.Notify=version=>entry?.NotifyUpdate(version);
+    }
+    private async void UpdateAction(string action)
+    {
+        try
+        {
+            EnsureUpdates();
+            switch(action)
+            {
+                case "preferences":updates!.PreferencesChanged();break;
+                case "checkUpdate":await updates!.CheckAsync(true);break;
+                case "downloadUpdate":await updates!.DownloadAsync();break;
+                case "cancelUpdate":updates!.Cancel();break;
+                case "installUpdate":updates!.Install();break;
+                case "releasePage":Process.Start(new ProcessStartInfo(updates!.View.Page??TrayNest.Installation.ReleaseClient.Repository+"/releases"){UseShellExecute=true});break;
+                case "uninstall":UpdateController.LaunchUninstaller();break;
+            }
+        }
+        catch(Exception error){settingsWindow?.ShowOperationStatus(error.Message,true);}
     }
     private async Task ChangeMaterialSyncAsync(bool enabled)
     {
@@ -429,8 +555,14 @@ internal sealed class TrayApplication:ApplicationContext
         if(candidate!=null||releasedCandidate!=null||bridge==null)return;
         nint overflow=Native.FindWindowW("TopLevelWindowForOverflowXamlIsland",null);
         if(!panel.Visible&&(overflow==0||!Native.IsWindowVisible(overflow)))return;
-        foreach(var record in bridge.Icons.Values.Where(value=>!value.Selected))
-        {var rect=Native.GetIconRect(record.Window,record.Id,record.Guid);if(!rect.IsEmpty)record.NativeBounds=rect;}
+        CacheNativeBoundsSnapshot(bridge.Icons.Values,record=>Native.GetIconRect(record.Window,record.Id,record.Guid));
+    }
+    internal static void CacheNativeBoundsSnapshot(IEnumerable<IconRecord> records,Func<IconRecord,Rectangle> readBounds)
+    {
+        // Querying Explorer may dispatch icon registrations on this UI thread.
+        // Complete enumeration before any native query can reenter the bridge.
+        foreach(var record in records.Where(value=>!value.Selected).ToArray())
+        {var rect=readBounds(record);if(!rect.IsEmpty)record.NativeBounds=rect;}
     }
     private bool IsSystemTrayWindow(nint window)
     {
@@ -464,18 +596,26 @@ internal sealed class TrayApplication:ApplicationContext
         if(HandleOwnMenuPress(point,true,observedAt))return;
         if(!panel.Visible)return;
         if(sourceRoot==panel.Handle||panel.IsDropSurface(point))return;
-        if(IsSystemTrayWindow(sourceRoot)){ignoreNativeCloseForPanelInteraction=false;panelOpenedUntil=0;pairedWithOverflow=NativeOverflow.Visible;return;}
+        if(settings.OpeningMode==OpeningMode.Linked&&!collectionOnlyCycle&&IsSystemTrayWindow(sourceRoot)){ignoreNativeCloseForPanelInteraction=false;panelOpenedUntil=0;pairedWithOverflow=NativeOverflow.Visible;return;}
         if(!IsContextSurface(sourceRoot)&&!IsOwnPopup(sourceRoot))panel.Dismiss();
     }
     private void UpdateEntryBounds(){if(entry!=null){var rect=entry.Bounds;if(!rect.IsEmpty)panel.EntryRectangle=rect;}}
-    private void RefreshPanel()
+    private void RefreshPanel()=>RefreshPanel(false);
+    private void RefreshPanel(bool flushPending)
     {
+        if(appliedMode!=settings.OpeningMode)
+        {panel.Hide();autoExpand.SuppressCurrentCycle(NativeOverflow.Visible);pairedWithOverflow=false;collectionOnlyCycle=false;ResetBlankGesture();appliedMode=settings.OpeningMode;}
+        panel.IndependentEntry=settings.OpeningMode==OpeningMode.Independent;
+        if(entry!=null&&entry.Independent!=panel.IndependentEntry)EntryPlacementPreference.Capture(settings,entry.Independent?OpeningMode.Independent:OpeningMode.Linked,entry.Identity,Environment.ProcessPath!);
+        entry?.SetIndependent(panel.IndependentEntry);
+        if(entry!=null&&placementAppliedMode!=settings.OpeningMode&&EntryPlacementPreference.Initialize(settings,entry.Identity,Environment.ProcessPath!))placementAppliedMode=settings.OpeningMode;
+        panel.NativeGeometry=panel.IndependentEntry?null:nativeGeometry;
         if(panel.IsPreparing&&(!settings.FollowNativeOverflow||settings.ExpansionOrder!=NativeExpansionOrder.AfterNative))panel.Dismiss();
-        if(panel.IsAnimating){refreshPanelPending=true;return;}
+        if(panel.IsAnimating&&!flushPending){refreshPanelPending=true;return;}
         var records=bridge?.Icons.Values.ToArray()??[];
         if(library.EnsureEntries(records))settings.Save();
         var ordered=library.Snapshot(records);foreach(var record in ordered.Where(record=>!record.IsOffline))launcher.Registered(record.Rule);
-        panel.SetAppearance(AppearanceForMaterial(settings.MatchPanelMaterials));panel.SetPlacement(settings.Placement);panel.FixedColumns=settings.Columns;panel.Render(ordered);
+        panel.SetAppearance(AppearanceForMaterial(settings.MatchPanelMaterials),settings.MatchPanelMaterials);panel.SetPlacement(settings.Placement);panel.FixedColumns=settings.Columns;panel.Render(ordered);
     }
     private void LaunchTool(IconRecord record)
     {
@@ -502,7 +642,7 @@ internal sealed class TrayApplication:ApplicationContext
     {
         menu.AutoClose=true;
         menu.Closed+=(_,args)=>{AppDiagnostics.Info("TN0101",new(){["Operation"]="MenuClosed",["Reason"]=args.CloseReason.ToString()});menuOwner.Hide();if(entry!=null)NativeTray.PostMessage(entry.Handle,0,0,0);};
-        menu.Items.Add("设置",null,(_,_)=>Guard(ShowSettings));
+        menu.Items.Add("设置",null,(_,_)=>panel.BeginInvoke((Action)(()=>Guard(ShowSettings))));
     }
     private void RestoreAllIcons()
     {
@@ -553,6 +693,7 @@ internal sealed class TrayApplication:ApplicationContext
         offlineMenu.Close();
         if(Environment.TickCount64<suppressMenuUntil){suppressMenuUntil=0;return;}
         if(menu.Visible){menu.Close(ToolStripDropDownCloseReason.CloseCalled);return;}
+        autoExpand.SuppressCurrentCycle(NativeOverflow.Visible);
         BeginPanelInteraction();menuEntryAnchor=entry?.Bounds??Rectangle.Empty;
         menuOwner.Location=Cursor.Position;menuOwner.Show();Native.SetForegroundWindow(menuOwner.Handle);
         menuOpenedAt=Environment.TickCount64;menu.Show(menuOwner,Point.Empty);
@@ -571,7 +712,7 @@ internal sealed class TrayApplication:ApplicationContext
     {
         if(stopping)return;stopping=true;
         var last=AppDiagnostics.Snapshot();last["Stopped"]=true;AppDiagnostics.State=()=>last;
-        timer.Stop();discovery.Stop();finishDrag.Stop();nativeGeometry.Dispose();nativeMaterial.Dispose();settingsWindow?.Close();
+        updates?.Dispose();shortcut.Dispose();ResetBlankGesture();timer.Stop();discovery.Stop();finishDrag.Stop();overflowObserver?.Dispose();nativeGeometry.Dispose();nativeMaterial.Dispose();settingsWindow?.Close();
         try{drag?.Dispose();}catch(Exception error){AppDiagnostics.Error("TN9001",error);}
         bool bridgeStopped=true;
         try{bridge?.Dispose();}catch(Exception error){bridgeStopped=false;AppDiagnostics.Error("TN6001",error);}

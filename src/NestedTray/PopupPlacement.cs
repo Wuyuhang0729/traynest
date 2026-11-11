@@ -4,6 +4,9 @@ internal enum PopupPlacement { Left, Above }
 
 internal static class PopupPosition
 {
+    internal static Point CenterAbove(Rectangle anchor,Size panel,Rectangle work,int gap=8)=>new(
+        Math.Clamp(anchor.Left+(anchor.Width-panel.Width)/2,work.Left,Math.Max(work.Left,work.Right-panel.Width)),
+        Math.Clamp(anchor.Top-panel.Height-gap,work.Top,Math.Max(work.Top,work.Bottom-panel.Height)));
     internal static Point Calculate(Rectangle anchor,Size panel,Rectangle work,PopupPlacement placement,int gap=8)
     {
         var left=new Point(anchor.Left-panel.Width-gap,anchor.Bottom-panel.Height);

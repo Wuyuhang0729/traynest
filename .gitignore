@@ -19,3 +19,7 @@ close-animation-draft.json
 *.jsonl
 logs/
 restart-history.json
+
+# Generated native fixture evidence
+/verification/native-bridge/
+

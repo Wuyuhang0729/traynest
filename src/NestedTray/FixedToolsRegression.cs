@@ -31,12 +31,17 @@ internal static class FixedToolsRegression
             var expected=new[]{records[2].Rule,records[0].Rule,records[1].Rule};checks["DragOrderSaved"]=Settings.Load().Tools.Select(tool=>tool.Rule).SequenceEqual(expected)&&Order().SequenceEqual(expected);
             var previewTile=grid.Controls.OfType<Button>().First();
             var previewField=previewTile.GetType().GetField("Reordering",BindingFlags.Instance|BindingFlags.NonPublic)!;
+            previewField.SetValue(previewTile,false);
+            using var resting=new Bitmap(previewTile.Width,previewTile.Height);
+            previewTile.DrawToBitmap(resting,new Rectangle(Point.Empty,resting.Size));
             previewField.SetValue(previewTile,true);
             using(var preview=new Bitmap(previewTile.Width,previewTile.Height))
             {
                 previewTile.DrawToBitmap(preview,new Rectangle(Point.Empty,preview.Size));
-                var highlight=panel.LightSurface?Color.FromArgb(209,230,249):Color.FromArgb(43,66,86);
-                checks["ReorderTargetHighlightVisible"]=preview.GetPixel(8,8).ToArgb()==highlight.ToArgb();
+                // Current feedback strokes the perimeter instead of filling
+                // the tile. Verify a visible edge and unchanged interior.
+                checks["ReorderTargetPerimeterVisible"]=preview.GetPixel(2,preview.Height/2)!=resting.GetPixel(2,resting.Height/2);
+                checks["ReorderTargetInteriorPreserved"]=preview.GetPixel(8,8)==resting.GetPixel(8,8);
                 preview.Save(Path.Combine(directory,"reorder-target-tile.png"));
             }
             using(var preview=new Bitmap(panel.Width,panel.Height)){panel.DrawToBitmap(preview,new Rectangle(Point.Empty,preview.Size));preview.Save(Path.Combine(directory,"reorder-feedback-no-duplicate.png"));}
@@ -73,6 +78,13 @@ internal static class FixedToolsRegression
             settings.Columns=6;settings.Save();checks["ColumnPreferencePersistsAcrossRestart"]=Settings.Load().Columns==6;settings.Columns=5;settings.Save();
             foreach(var record in records.Skip(3))settings.Collected.Add(record.Rule);library.EnsureEntries(records);settings.Save();Render(records.Take(25));var before=Positions();Render(records);
             checks["Adding26thToolDoesNotReflowColumns"]=before.All(pair=>Positions()[pair.Key]==pair.Value);
+            string aliased=@"{6D809377-6AF0-444B-8957-A3773F02200E}\Example\app.exe";
+            string normalized=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),@"Example\app.exe");
+            checks["KnownFolderAliasResolvesToDiskPath"]=ExecutableIdentity.Normalize(aliased)==normalized;
+            checks["UnknownAliasRemainsUnchanged"]=ExecutableIdentity.Normalize(@"{11111111-1111-1111-1111-111111111111}\app.exe")==@"{11111111-1111-1111-1111-111111111111}\app.exe";
+            var migration=new Settings{Collected=[aliased.ToLowerInvariant()+"|i:1",normalized.ToLowerInvariant()+"|i:1"],Tools=[new SavedTool{Rule=aliased.ToLowerInvariant()+"|i:1",Executable=aliased,LaunchTarget=aliased}]};
+            ExecutableIdentity.NormalizeSettings(migration);
+            checks["LegacyAliasMigrationRetainsSlotWithoutDuplicate"]=migration.Collected.Count==1&&migration.Tools[0].Executable==normalized&&migration.Tools[0].LaunchTarget==normalized&&migration.Tools[0].Rule==migration.Collected[0];
             string good=Path.Combine(directory,"launch.exe");File.WriteAllText(good,"fixture only; launcher injected");
             var saved=settings.Tools[0];saved.LaunchTarget=good;
             int starts=0;long now=0;var launcher=new ToolLauncher{Clock=()=>now,IsRunning=_=>false,Start=_=>starts++};
@@ -80,6 +92,7 @@ internal static class FixedToolsRegression
             checks["RepeatedClicksDuringLaunchDoNotDuplicate"]=!launcher.Launch(saved).Started&&starts==1;
             launcher.Registered(saved.Rule);checks["RegistrationClearsPendingState"]=!launcher.IsPending(saved.Rule);
             launcher.IsRunning=_=>true;checks["RunningProcessWithoutIconNotRelaunched"]=!launcher.Launch(saved).Started&&starts==1;
+            launcher.IsRunning=_=>false;checks["ExitedProcessClearsRunningWithoutIconImmediately"]=launcher.Status(saved.Rule).State==ToolLaunchState.Idle;
             launcher.Registered(saved.Rule);saved.LaunchTarget=Path.Combine(directory,"missing.exe");checks["MissingLaunchTargetShowsActionableHint"]=launcher.Launch(saved).Message.Contains("右键");
             saved.LaunchTarget=good;launcher.IsRunning=_=>false;launcher.Start=_=>throw new System.ComponentModel.Win32Exception(2);
             checks["LaunchFailureIsReportedAndRetryable"]=!launcher.Launch(saved).Started&&!launcher.IsPending(saved.Rule);
