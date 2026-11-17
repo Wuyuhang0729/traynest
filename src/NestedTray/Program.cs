@@ -6,6 +6,12 @@ internal static class Program
 {
     [STAThread]private static int Main(string[] args)
     {
+        if(args.Length==2&&args[0]=="--self-test-entry-protocol")return EntryProtocolRegression.Run(args[1]);
+        if(args.Length is 3 or 4&&args[0]=="--self-test-fullscreen-lifecycle")
+        {
+            int monitor=-1;if(args.Length==4&&(!int.TryParse(args[3],out monitor)||monitor<0))return 2;
+            return FullscreenLifecycleRegression.Run(args[1],args[2],monitor);
+        }
         if(args.Length==2&&args[0]=="--self-test-entry-policy")return EntryPolicyRegression.Run(args[1]);
         if(args.Length==2&&args[0]=="--opening-foreground")
         {Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);Application.EnableVisualStyles();return OpeningRegression.Foreground(args[1]);}
@@ -93,7 +99,12 @@ internal static class Program
             return args[0]=="--self-test-reliability"?ReliabilityRegression.Run(args[2]):args[0]=="--self-test-hidden"?HiddenStateRegression.Run(args[2]):args[0]=="--self-test-ole-live"?ExternalOleRegression.Run(args[2]):ProductSelfTest.Run(args[2],args[0]=="--self-test-ole",args[0]=="--self-test-legacy");
         }
         using var single=new Mutex(true,"Local\\NestedTray-"+Environment.UserName,out bool created);
-        if(!created)return 0;
+        if(!created)
+        {
+            AppDiagnostics.Info("TN0101",new(){["Operation"]="ExistingInstanceLaunch",["Process"]=Environment.ProcessId.ToString()});
+            if(!SingleInstance.Activate())MessageBox.Show("TrayNest 已在启动或暂时未响应。请稍后重试；若出现启动失败窗口，可选择重试启动。", "TrayNest",MessageBoxButtons.OK,MessageBoxIcon.Information);
+            return 0;
+        }
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
         TrayApplication? running=null;bool failing=false;
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
@@ -108,14 +119,16 @@ internal static class Program
         {try{AppDiagnostics.Error("TN9002",eventArgs.ExceptionObject as Exception);}catch{/* The watchdog remains independent of logging. */}};
         try
         {
-            AppDiagnostics.Info("TN0001",new(){["LaunchMode"]=args.Contains("--startup")?"Logon":"Manual"});CompatibilityProbe.EnsureStartup(args.Contains("--startup"));
-            using var app=new TrayApplication();running=app;
+            AppDiagnostics.Info("TN0001",new(){["LaunchMode"]=args.Contains("--startup")?"Logon":"Manual",["Process"]=Environment.ProcessId.ToString(),["Session"]=Process.GetCurrentProcess().SessionId.ToString()});CompatibilityProbe.EnsureStartup(args.Contains("--startup"));
+            AppDiagnostics.Info("TN0101",new(){["Operation"]="ShellWindowFound",["Process"]=Environment.ProcessId.ToString(),["Window"]=Native.FindWindowW("Shell_TrayWnd",null).ToString()});
+            using var app=new TrayApplication(registrationTimeout:args.Contains("--startup")?120000:20000);running=app;
+            AppDiagnostics.Info("TN0011",new(){["LaunchMode"]=args.Contains("--startup")?"Logon":"Manual"});
             using var maintenance=new MaintenanceEndpoint(()=>app.Shutdown());
             maintenance.Start();MaintenanceEndpoint.SignalReady(args);
             Application.Run(app);return failing?1:0;
         }
         catch(Exception error)
-        {DiagnosticUi.Error(error is TrayNestException known?known.Code:"TN1003",error);return 1;}
+        {DiagnosticUi.Show(AppDiagnostics.Error(error is TrayNestException known?known.Code:"TN1003",error),allowRestart:true);return 1;}
         finally{AppDiagnostics.State=null;}
     }
 }
@@ -214,13 +227,13 @@ internal sealed class TrayApplication:ApplicationContext
     internal TrayPanel Panel=>panel;
     internal EntryIcon Entry=>entry!;
     internal bool HasDragCandidate=>candidate!=null;
-    internal TrayApplication(bool testMode=false)
+    internal TrayApplication(bool testMode=false,long registrationTimeout=20000)
     {
         library=new ToolLibrary(settings);
         _=panel.Handle;
         try
         {
-            recovery.Start();entry=new EntryIcon(settings.OpeningMode);bridge=new TrayBridge(settings,recovery);
+            recovery.Start();entry=new EntryIcon(settings.OpeningMode,registrationTimeout:registrationTimeout);bridge=new TrayBridge(settings,recovery);
             shortcut.Pressed=ToggleShortcut;shortcutAvailable=shortcut.Restore(settings.Shortcut);
             entry.DiagnosticsRequested=SaveDiagnostics;
             entry.SettingsRequested=()=>Guard(ShowSettings);
@@ -241,6 +254,7 @@ internal sealed class TrayApplication:ApplicationContext
             }));
             bridge.Bounds=record=>panel.CellBounds(record);
             entry.Open=()=>{collectionOnlyCycle=false;autoExpand.SuppressCurrentCycle(NativeOverflow.Visible);UpdateEntryBounds();if(panel.WantsVisible)panel.Dismiss();else panel.Open();entry.SetExpanded(panel.WantsVisible);};
+            entry.Activate=()=>{if(!panel.WantsVisible)entry.Open();else panel.EnsureAboveApplications();};
             entry.Menu=()=>ShowMenu();
             // The standard refresh broadcast also reaches this window, so restart detection
             // is based on the actual Explorer handle rather than the message alone.
@@ -318,7 +332,7 @@ internal sealed class TrayApplication:ApplicationContext
             };
             timer.Start();discovery.Tick+=(_,_)=>{discovery.Stop();bridge?.RefreshExisting();};if(!testMode){discovery.Start();EnsureUpdates();}
         }
-        catch {Stop();throw;}
+        catch {Dispose();throw;}
     }
     internal void PointerDown(Point point,nint sourceRoot,bool nativeVisibleOnPress,long observedAt=0)
     {

@@ -40,6 +40,15 @@ internal static class StartupRegression
             checks["MissingShellTimesOutWithoutBusyLoop"]=!CompatibilityProbe.WaitForTray(()=>false,()=>now,ms=>now+=ms,120000)&&now==120000;
             now=0;sleeps=0;
             checks["ReadyShellDoesNotDelay"]=CompatibilityProbe.WaitForTray(()=>true,()=>now,ms=>sleeps++,120000)&&sleeps==0;
+            var operations=new List<uint>();int attempts=0;now=0;
+            checks["EntryRegistrationRecoversAfterShellExistsButRejectsAdd"]=CompatibilityProbe.WaitForTray(
+                ()=>EntryRegistration.Attempt(op=>{operations.Add(op);return op!=0||++attempts>=4;}),
+                ()=>now,ms=>now+=ms,120000)&&attempts==4&&now==600&&operations.SequenceEqual(new uint[]{0,0,0,0,4});
+            operations.Clear();
+            checks["VersionFailureDeletesPartialEntry"]=!EntryRegistration.Attempt(op=>{operations.Add(op);return op!=4;})&&operations.SequenceEqual(new uint[]{0,4,2});
+            now=0;attempts=0;
+            checks["PersistentEntryFailureIsBounded"]=!CompatibilityProbe.WaitForTray(
+                ()=>EntryRegistration.Attempt(op=>{attempts++;return false;}),()=>now,ms=>now+=ms,120000)&&now==120000&&attempts==601;
             string Change(string name,string value,bool last=false){var copy=XDocument.Parse(xml);(last?copy.Descendants(ns+name).Last():copy.Descendants(ns+name).First()).Value=value;return copy.ToString();}
         }
         catch(Exception error){errors.Add(error.ToString());}

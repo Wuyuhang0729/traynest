@@ -10,6 +10,7 @@ $config=Join-Path $tnProfile 'settings.json';[IO.File]::WriteAllText($config,'{"
 $configHash=(Get-FileHash -LiteralPath $config).Hash
 $target=Join-Path $root 'installed'
 $iscc=Join-Path $workspace '.tools/innosetup-7.1.1/ISCC.exe'
+$packageVersion=(Get-Content -LiteralPath (Join-Path $payload 'traynest-package.json') -Raw | ConvertFrom-Json).Version
 $checks=[ordered]@{}
 function Run-Installer([string]$Exe,[string]$Log){
  $process=Start-Process -FilePath $Exe -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-','/TASKS=','/NOICONS',('/DIR="'+$target+'"'),('/LOG="'+$Log+'"')) -WindowStyle Hidden -Wait -PassThru
@@ -17,9 +18,9 @@ function Run-Installer([string]$Exe,[string]$Log){
 }
 function Compile-Test([string]$Source,[string]$Name){
  $output=Join-Path $root $Name
- & $iscc ('/DPayload='+$Source) '/DAppVersion=0.2.0-preview.17' ('/DOutput='+$output) ('/DTestProfile='+$tnProfile) (Join-Path $workspace 'installer/TrayNest.iss') *> (Join-Path $root ($Name+'-compile.log'))
+ & $iscc ('/DPayload='+$Source) ('/DAppVersion='+$packageVersion) ('/DOutput='+$output) ('/DTestProfile='+$tnProfile) (Join-Path $workspace 'installer/TrayNest.iss') *> (Join-Path $root ($Name+'-compile.log'))
  if($LASTEXITCODE-ne 0){throw 'Test installer compile failed.'}
- return Join-Path $output 'TrayNest-Setup-v0.2.0-preview.17-win-x64.exe'
+ return Join-Path $output ('TrayNest-Setup-v'+$packageVersion+'-win-x64.exe')
 }
 $installer=Compile-Test $payload 'good'
 $checks.FreshInstall=(Run-Installer $installer (Join-Path $root 'fresh.log'))-eq 0

@@ -25,6 +25,9 @@ internal sealed class TrayBridge:IDisposable
     internal bool RestoredAll{get;private set;}=true;
     internal Action<IconRecord,uint>? StateOverride;
     private bool recoveryUnsafe;
+    private bool privateFixture;
+    private TrayStateTrace? activeStateTrace;
+    private long lastRoutingLog;
     internal TrayBridge(Settings settings,RecoveryJournal recovery)
     {
         this.settings=settings;this.recovery=recovery;procedure=Receive;
@@ -39,6 +42,17 @@ internal sealed class TrayBridge:IDisposable
             throw new TrayNestException("TN1005");
         if(explorer==0||!Process.GetProcessById((int)owner).ProcessName.Equals("explorer",StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("没有找到原生 Explorer 托盘，或已有其他托盘接管程序运行。请先退出其他托盘管理工具。");
+        StartReceiver();
+    }
+    internal void StartForPrivateFixture(nint window)
+    {
+        Native.GetWindowThreadProcessId(window,out uint owner);
+        if(!EntryProtocolRegression.OnPrivateDesktop||AllowedOwners?.Contains(Environment.ProcessId)!=true||owner!=Environment.ProcessId||!Native.IsWindow(window))
+            throw new InvalidOperationException("Only an own fixture on the private test desktop may supply the endpoint.");
+        explorer=window;privateFixture=true;StartReceiver();
+    }
+    private void StartReceiver()
+    {
         if(!Native.GetWindowRect(explorer,out var rect))throw new InvalidOperationException("无法读取系统任务栏位置。");
         var cls=new Native.WindowClass{Instance=module,ClassName="Shell_TrayWnd",Callback=procedure};
         if(Native.RegisterClassW(ref cls)==0)throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
@@ -46,6 +60,8 @@ internal sealed class TrayBridge:IDisposable
         if(receiver==0)throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
         geometryFacade=new TaskbarGeometryFacade(receiver,explorer);
         if(Native.FindWindowW("Shell_TrayWnd",null)!=receiver)throw new InvalidOperationException("托盘消息入口不可用，已停止启动。");
+        AppDiagnostics.Info("TN0101",new(){["Operation"]="TrayReceiverStarted",["Process"]=Environment.ProcessId.ToString(),
+            ["Receiver"]=TrayStateTrace.Endpoint(receiver),["Explorer"]=TrayStateTrace.Endpoint(explorer)});
     }
     internal bool ExplorerAlive=>explorer!=0&&Native.IsWindow(explorer);
     internal nint ExplorerWindow=>explorer;
@@ -62,40 +78,64 @@ internal sealed class TrayBridge:IDisposable
             if(AllowedOwners==null)RefreshExisting();
             else foreach(var record in Icons.Values)NativeTray.PostMessage(record.Window,Native.RegisterWindowMessageW("TaskbarCreated"),0,0);
         }
-        if(Native.FindWindowW("Shell_TrayWnd",null)!=receiver)
-            Native.SetWindowPos(receiver,new nint(-1),0,0,0,0,0x213);
+        nint candidate=Native.FindWindowW("Shell_TrayWnd",null);
+        if(candidate!=receiver)
+        {
+            bool positioned=Native.SetWindowPos(receiver,new nint(-1),0,0,0,0,0x213);
+            if(lastRoutingLog==0||Environment.TickCount64-lastRoutingLog>=1000)
+            {
+                lastRoutingLog=Environment.TickCount64;
+                AppDiagnostics.Info("TN0101",new(){["Operation"]="TrayReceiverReordered",["Process"]=Environment.ProcessId.ToString(),
+                    ["Receiver"]=TrayStateTrace.Endpoint(receiver),["Explorer"]=TrayStateTrace.Endpoint(explorer),
+                    ["CandidateBefore"]=TrayStateTrace.Endpoint(candidate),["CandidateAfter"]=TrayStateTrace.Endpoint(Native.FindWindowW("Shell_TrayWnd",null)),["Positioned"]=positioned.ToString()});
+            }
+        }
         long now=Environment.TickCount64;
         foreach(var record in Icons.Values.Where(value=>value.Selected&&value.RehideAfter<=now).ToArray())
         {
+            // Synchronous native sends can dispatch a source's Delete while an
+            // earlier item is being maintained. The snapshot is no longer live.
+            if(!IsCurrent(record)||!record.Selected)continue;
             record.RehideAfter=now+1000;
             Native.GetWindowThreadProcessId(record.Window,out uint owner);
             if(!Native.IsWindow(record.Window)||owner!=record.ProcessId)continue;
             try
             {
                 if(!forwarding.ReapplyHiddenState(()=>SetState(record,1)))return;
-                HiddenStateReapplications++;
+                if(IsCurrent(record)&&record.Selected)HiddenStateReapplications++;
             }
             catch(InvalidOperationException error){Fail("TN2002",error);return;}
         }
     }
+    private bool IsCurrent(IconRecord record)=>Icons.TryGetValue(record.Key,out var current)&&ReferenceEquals(current,record);
     private void Fail(string code,Exception? error=null) {if(!faulted){faulted=true;Faulted?.Invoke(code,error);}}
-    private nint Forward(uint message,nuint wp,nint lp)
+    private nint Forward(uint message,nuint wp,nint lp,TrayStateTrace? trace=null)
     {
-        if(disposing)return Native.SendMessageTimeoutW(explorer,message,wp,lp,0x22,750,out nuint finalResult)!=0?unchecked((nint)finalResult):0;
-        return forwarding.Send(Environment.TickCount64,()=>
+        if(disposing)
         {
+            bool success=Native.SendMessageTimeoutW(explorer,message,wp,lp,0x22,750,out nuint finalResult)!=0;
+            trace?.Forwarded(success,finalResult);return success?unchecked((nint)finalResult):0;
+        }
+        bool attempted=false;
+        nint forwarded=forwarding.Send(Environment.TickCount64,()=>
+        {
+            attempted=true;
             bool success=Native.SendMessageTimeoutW(explorer,message,wp,lp,0x22,750,out nuint result)!=0;
+            trace?.Forwarded(success,result);
             return(success,result);
         });
+        if(!attempted)trace?.Suppressed();
+        return forwarded;
     }
-    private nint ForwardBytes(nuint tag,byte[] bytes,nuint wp)
+    private nint ForwardBytes(nuint tag,byte[] bytes,nuint wp,TrayStateTrace? trace=null)
     {
         nint buffer=Marshal.AllocHGlobal(bytes.Length),header=Marshal.AllocHGlobal(Marshal.SizeOf<Native.CopyData>());
-        try {Marshal.Copy(bytes,0,buffer,bytes.Length);Marshal.StructureToPtr(new Native.CopyData{Tag=tag,Size=(uint)bytes.Length,Bytes=buffer},header,false);return Forward(0x4A,wp,header);}
+        try {Marshal.Copy(bytes,0,buffer,bytes.Length);Marshal.StructureToPtr(new Native.CopyData{Tag=tag,Size=(uint)bytes.Length,Bytes=buffer},header,false);return Forward(0x4A,wp,header,trace);}
         finally {Marshal.FreeHGlobal(header);Marshal.FreeHGlobal(buffer);}
     }
     private nint Receive(nint hwnd,uint message,nuint wp,nint lp)
     {
+        TrayStateTrace? trace=null;
         try
         {
             if(message==0x4A&&lp!=0)
@@ -128,8 +168,9 @@ internal sealed class TrayBridge:IDisposable
                     if(packet==null){UnrecognizedPacketCount++;AppDiagnostics.Warn("TN1101","unrecognized-layout");}
                     if(packet!=null)
                     {
+                        if(activeStateTrace?.Matches(packet)==true){trace=activeStateTrace;trace.Received();}
                         Native.GetWindowThreadProcessId(packet.Window,out uint process);
-                        if(process==Environment.ProcessId)return Forward(message,wp,lp);
+                        if(process==Environment.ProcessId&&!privateFixture)return Forward(message,wp,lp);
                         if(AllowedOwners!=null&&!AllowedOwners.Contains((int)process))return Forward(message,wp,lp);
                         string key=IconRecord.Identity(packet.Window,packet.Id,packet.Guid);
                         if(AllowedOwners!=null&&packet.Operation is 0 or 1)testPackets[key]=(byte[])bytes.Clone();
@@ -172,14 +213,14 @@ internal sealed class TrayBridge:IDisposable
                                 BitConverter.GetBytes(packet.Flags|8).CopyTo(bytes,20);
                                 BitConverter.GetBytes(BitConverter.ToUInt32(bytes,288)|1).CopyTo(bytes,288);
                                 BitConverter.GetBytes(BitConverter.ToUInt32(bytes,292)|1).CopyTo(bytes,292);
-                                nint result=ForwardBytes(copy.Tag,bytes,wp);Changed?.Invoke();return result;
+                                nint result=ForwardBytes(copy.Tag,bytes,wp,trace);Changed?.Invoke();return result;
                             }
                             Changed?.Invoke();
                         }
                         else if(packet.Operation==4&&Icons.TryGetValue(key,out var record))record.Version=packet.Version;
                     }
                 }
-                return Forward(message,wp,lp);
+                return Forward(message,wp,lp,trace);
             }
             if(message>=0x400||message is 0x111 or 0x7F)return Forward(message,wp,lp);
             return Native.DefWindowProcW(hwnd,message,wp,lp);
@@ -187,7 +228,7 @@ internal sealed class TrayBridge:IDisposable
         catch(Exception error)
         {
             Fail("TN2004",error);
-            return message==0x4A?Forward(message,wp,lp):Native.DefWindowProcW(hwnd,message,wp,lp);
+            return message==0x4A?Forward(message,wp,lp,trace):Native.DefWindowProcW(hwnd,message,wp,lp);
         }
     }
     private void SaveRecovery()=>recovery.Write(Icons.Values.Where(value=>value.Selected).Select(value=>value.Recovery()));
@@ -282,9 +323,23 @@ internal sealed class TrayBridge:IDisposable
     {
         if(StateOverride!=null){StateOverride(record,state);return;}
         var data=NativeTray.New(record.Window,record.Id,record.Guid);data.Flags=8|(record.Guid==Guid.Empty?0u:0x20u);data.StateMask=1;data.State=state;
-        changingState=true;
-        try {if(!NativeTray.Notify(1,ref data)&&Native.IsWindow(record.Window))throw new InvalidOperationException("系统未接受图标状态变更。");}
-        finally {changingState=false;}
+        bool tracked=IsCurrent(record);
+        var trace=new TrayStateTrace(record,state,receiver,explorer);var previousTrace=activeStateTrace;bool previousChanging=changingState;
+        changingState=true;activeStateTrace=trace;
+        try
+        {
+            bool accepted=NativeTray.Notify(1,ref data);
+            if(!accepted)
+            {
+                // Only a confirmed record removal during this exact native call
+                // supersedes the write. A live record's explicit rejection still
+                // faults and keeps the restoration journal protected.
+                bool retired=tracked&&!IsCurrent(record);
+                AppDiagnostics.Info("TN0101",trace.Failure(accepted,forwarding.Pending,retired));
+                if(!retired&&Native.IsWindow(record.Window))throw new InvalidOperationException("系统未接受图标状态变更。");
+            }
+        }
+        finally {changingState=previousChanging;activeStateTrace=previousTrace;}
     }
     internal void ForwardInput(IconRecord record,uint code,Rectangle rect)
     {

@@ -29,3 +29,9 @@ dotnet run --project src/TrayNest.Installation.Tests -c Release -- --live 0.2.0-
 scripts/Test-Release.ps1 包含会操作桌面的完整测试：先正常退出日常 TrayNest，使用 verification/TrayFixture 自有图标并暂停输入，再顺序运行。不要与日常版并发接管托盘，不重启 Explorer。verification/Test-NativeBridgeFixture.ps1 使用自有 XAML 宿主检查材质及恢复，不能把初始化成功当视觉验收。
 
 安装说明、限制及本版验证边界见 docs/USER_GUIDE.md、docs/COMPATIBILITY.md 与 docs/RELEASE-0.2.0-preview.17.md。
+
+## preview.18 启动与生命周期回归
+
+使用 --self-test-entry-protocol <独立目录> 验证私有桌面上的真实原生注册、拒绝、回滚、超时及删除重入保护；不接管用户Explorer。相关隔离入口还有 startup、tray-connection、experience、diagnostics、entry-policy。
+
+--self-test-fullscreen-lifecycle <独立目录> <OwnFullscreenFixture.exe> [显示器索引] 仅使用自有D3D11夹具；会接管托盘，须正常退出日常版，结束恢复。不得用报告者软件作可强制终止夹具。测试机制覆盖不代表原环境问题已解决。

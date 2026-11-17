@@ -8,16 +8,17 @@ internal sealed class EntryIcon:NativeWindow,IDisposable
     private readonly System.Windows.Forms.Timer clickDelay=new(){Interval=50};
     private Icon icon;
     private bool independent,expanded,needsRedraw;
+    private long lastRegistrationFailure;
     private readonly EntryArrowMotion arrowMotion=new();
     private readonly System.Windows.Forms.Timer arrowFrames=new(){Interval=15};
     internal bool Expanded=>expanded;
     internal bool Independent=>independent;
     internal Guid Identity=>guid;
-    internal Action? Open,Menu,ExplorerRestarted,DiagnosticsRequested,SettingsRequested;
+    internal Action? Open,Activate,Menu,ExplorerRestarted,DiagnosticsRequested,SettingsRequested;
     private readonly uint taskbarCreated=Native.RegisterWindowMessageW("TaskbarCreated");
     private readonly uint diagnosticsMessage=Native.RegisterWindowMessageW("NestedTray.Diagnostics.v1");
     private readonly uint settingsMessage=Native.RegisterWindowMessageW("NestedTray.Settings.v1");
-    internal EntryIcon(OpeningMode mode=OpeningMode.Linked,string caption="NestedTray entry")
+    internal EntryIcon(OpeningMode mode=OpeningMode.Linked,string caption="NestedTray entry",long registrationTimeout=20000)
     {
         CreateHandle(new CreateParams{Caption=caption,ExStyle=0x08000080});
         independent=mode==OpeningMode.Independent;guid=independent?independentGuid:linkedGuid;
@@ -27,13 +28,42 @@ internal sealed class EntryIcon:NativeWindow,IDisposable
             bool painted=UpdateImage(true,false);
             if(painted&&!arrowMotion.Active(Environment.TickCount64))arrowFrames.Stop();
         };
-        Add();clickDelay.Tick+=(_,_)=>{clickDelay.Stop();Open?.Invoke();};
+        try
+        {
+            int attempts=0;
+            bool Attempt()
+            {
+                attempts++;bool registered=TryAdd();
+                if(attempts==1&&!registered)AppDiagnostics.Info("TN0101",new(){["Operation"]="EntryRegistrationWaiting"});
+                if(registered&&attempts>1)AppDiagnostics.Info("TN0101",new(){["Operation"]="EntryRegistrationRecovered",["Attempts"]=attempts.ToString()});
+                return registered;
+            }
+            if(!CompatibilityProbe.WaitForTray(Attempt,()=>Environment.TickCount64,Thread.Sleep,registrationTimeout))
+                throw new InvalidOperationException("Windows 未能在等待期限内接受托盘入口注册，请重试启动。");
+        }
+        catch {Dispose();throw;}
+        clickDelay.Tick+=(_,_)=>{clickDelay.Stop();Open?.Invoke();};
     }
     private void Add()
+    {if(!TryAdd())throw new InvalidOperationException("无法创建托盘入口图标或设置交互版本。");}
+    private bool TryAdd()
     {
         var data=NativeTray.New(Handle,Id,guid);data.Flags=1|2|4|0x20|0x80;data.CallbackMessage=Callback;data.Icon=icon.Handle;data.Tip=independent?"TrayNest · 独立收纳面板":"TrayNest · 托盘收纳盒";
-        if(!NativeTray.Notify(0,ref data))throw new InvalidOperationException("无法创建托盘入口图标。");
-        data.Version=4;if(!NativeTray.Notify(4,ref data))throw new InvalidOperationException("无法设置托盘入口交互版本。");
+        return EntryRegistration.Attempt(operation=>
+        {
+            if(operation==4)data.Version=4;
+            nint candidate=Native.FindWindowW("Shell_TrayWnd",null);
+            long started=Environment.TickCount64;bool accepted=NativeTray.Notify(operation,ref data);
+            if(accepted||lastRegistrationFailure==0||started-lastRegistrationFailure>=1000||operation==2)
+            {
+                AppDiagnostics.Info("TN0101",new(){["Operation"]="EntryNativeCall",["Stage"]=operation switch{0=>"Add",4=>"SetVersion",_=>"RollbackDelete"},
+                    ["Accepted"]=accepted.ToString(),["DurationMs"]=(Environment.TickCount64-started).ToString(),["Window"]=Handle.ToString(),
+                    ["ShellWindow"]=Native.FindWindowW("Shell_TrayWnd",null).ToString(),["Process"]=Environment.ProcessId.ToString(),
+                    ["CandidateBefore"]=TrayStateTrace.Endpoint(candidate),["CandidateAfter"]=TrayStateTrace.Endpoint(Native.FindWindowW("Shell_TrayWnd",null))});
+                if(!accepted)lastRegistrationFailure=started;
+            }
+            return accepted;
+        });
     }
     internal static Icon CreateIndependentIcon(bool expanded=false)=>CreateIndependentIcon(expanded?180:0);
     internal static Icon CreateIndependentIcon(double angle)
@@ -90,6 +120,7 @@ internal sealed class EntryIcon:NativeWindow,IDisposable
     }
     protected override void WndProc(ref Message message)
     {
+        if((uint)message.Msg==SingleInstance.OpenMessage){Activate?.Invoke();message.Result=1;return;}
         if((uint)message.Msg==diagnosticsMessage){DiagnosticsRequested?.Invoke();message.Result=1;return;}
         if((uint)message.Msg==settingsMessage){SettingsRequested?.Invoke();message.Result=1;return;}
         if((uint)message.Msg==taskbarCreated)ExplorerRestarted?.Invoke();

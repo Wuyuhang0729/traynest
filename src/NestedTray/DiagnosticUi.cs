@@ -6,13 +6,13 @@ internal static class DiagnosticUi
 {
     internal const string IssueUrl="https://github.com/Wuyuhang0729/traynest/issues/new?template=bug_report.yml";
     internal static int OpenWindows{get;private set;}
-    internal static void Show(DiagnosticEvent? problem=null)
+    internal static void Show(DiagnosticEvent? problem=null,bool allowRestart=false)
     {
         using var window=new Form
         {
             Icon=AppIcon.Load(),Text=problem==null?"TrayNest · 诊断与反馈":$"TrayNest · {problem.Code}",
             ClientSize=new Size(680,460),MinimumSize=new Size(520,360),StartPosition=FormStartPosition.CenterScreen,
-            ShowInTaskbar=false,TopMost=true,AutoScaleMode=AutoScaleMode.Dpi
+            ShowInTaskbar=allowRestart,TopMost=true,AutoScaleMode=AutoScaleMode.Dpi
         };
         var description=new Label{Dock=DockStyle.Top,Height=74,Padding=new Padding(12),Text=problem==null
             ?"遇到问题时，可复制或导出诊断报告，并在 GitHub 填写复现步骤。报告会过滤个人路径和图标文本，提交前请检查内容。"
@@ -25,6 +25,16 @@ internal static class DiagnosticUi
         var issue=new Button{Text="打开 GitHub 反馈",AutoSize=true};
         var close=new Button{Text="关闭",AutoSize=true,DialogResult=DialogResult.Cancel};
         actions.Controls.AddRange([copy,export,issue,close]);
+        if(allowRestart)
+        {
+            var retry=new Button{Text="重试启动",AutoSize=true};
+            retry.Click+=(_,_)=>
+            {
+                Process.Start(new ProcessStartInfo(Environment.ProcessPath!){UseShellExecute=false,CreateNoWindow=true,WindowStyle=ProcessWindowStyle.Hidden,ArgumentList={"--restart-after-exit",Environment.ProcessId.ToString()}});
+                window.Close();
+            };
+            actions.Controls.Add(retry);
+        }
         window.Controls.Add(report);window.Controls.Add(description);window.Controls.Add(status);window.Controls.Add(actions);window.CancelButton=close;
         var snapshot=AppDiagnostics.Snapshot();
         report.Text=AppDiagnostics.Store.Report(snapshot,problem);
@@ -62,7 +72,6 @@ internal static class CompatibilityProbe
         if(!Supported(OperatingSystem.IsWindows(),Environment.OSVersion.Version.Build,System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture,System.Runtime.InteropServices.RuntimeInformation.OSArchitecture))
             throw new TrayNestException("TN1001");
         if(!WaitForTray(()=>Native.FindWindowW("Shell_TrayWnd",null)!=0,()=>Environment.TickCount64,Thread.Sleep,logon?120000:20000))throw new TrayNestException("TN1004");
-        AppDiagnostics.Info("TN0011",new(){["LaunchMode"]=logon?"Logon":"Manual"});
     }
     internal static bool WaitForTray(Func<bool> ready,Func<long> clock,Action<int> sleep,long timeout)
     {

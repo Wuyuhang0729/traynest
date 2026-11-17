@@ -3,7 +3,7 @@
 > **隐藏与整理 · 保存与启动 · 两种使用模式**<br>
 > **多种打开方式 · 外观与动效**
 
-**[下载预览版](https://github.com/Wuyuhang0729/traynest/releases/tag/v0.2.0-preview.17)** · [使用指南](docs/USER_GUIDE.md) · [更新日志](CHANGELOG.md)
+**[下载预览版](https://github.com/Wuyuhang0729/traynest/releases/tag/v0.2.0-preview.18)** · [使用指南](docs/USER_GUIDE.md) · [更新日志](CHANGELOG.md)
 
 <p align="center"><img src="assets/readme/overview-current.svg" width="880" alt="TrayNest：收纳面板、系统隐藏区与任务栏"></p>
 
@@ -37,8 +37,8 @@
 
 需要 **Windows 11 x64** 和 **WebView2 Runtime**。自带 .NET 10，无需另装 .NET；缺少 WebView2 时按向导提供的微软入口手动安装。
 
-- **推荐安装**：[下载安装器 EXE](https://github.com/Wuyuhang0729/traynest/releases/download/v0.2.0-preview.17/TrayNest-Setup-v0.2.0-preview.17-win-x64.exe)，按向导操作。
-- **完整 ZIP / 便携使用**：[下载 ZIP](https://github.com/Wuyuhang0729/traynest/releases/download/v0.2.0-preview.17/TrayNest-v0.2.0-preview.17-win-x64.zip)，完整解压后运行外层 `TrayNest.Setup.exe` 安装，或运行内层 `TrayNest/NestedTray.exe` 便携使用；保留完整目录。两个下载文件均附 `.sha256`。
+- **推荐安装**：[下载安装器 EXE](https://github.com/Wuyuhang0729/traynest/releases/download/v0.2.0-preview.18/TrayNest-Setup-v0.2.0-preview.18-win-x64.exe)，按向导操作。
+- **完整 ZIP / 便携使用**：[下载 ZIP](https://github.com/Wuyuhang0729/traynest/releases/download/v0.2.0-preview.18/TrayNest-v0.2.0-preview.18-win-x64.zip)，完整解压后运行外层 `TrayNest.Setup.exe` 安装，或运行内层 `TrayNest/NestedTray.exe` 便携使用；保留完整目录。两个下载文件均附 `.sha256`。
 
 1. 启动后，在系统隐藏区找到 TrayNest 蓝色入口，点击打开面板。
 2. 把需要的图标拖进面板，按 **Alt+D** 开收。
